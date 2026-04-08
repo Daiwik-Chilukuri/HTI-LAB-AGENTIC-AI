@@ -1,6 +1,6 @@
 # HTI-Lab AgenticAI Benchmark Platform
 
-A comprehensive Human-Technology Interaction (HTI) research platform built to run a controlled, within-subject experiment comparing how different state-of-the-art AI language models affect human productivity, cognitive load, and subjective experience.
+A comprehensive Human-Technology Interaction (HTI) research platform built to run a controlled, within-subject experiment measuring **how different state-of-the-art AI language models change human behavior** — focusing on reliance on AI, content ownership, and susceptibility to automation bias.
 
 This project enables **blind benchmarking** of 4 different LLMs across 3 distinct task families: Coding, Logic Puzzles, and Content Creation (Writing).
 
@@ -8,6 +8,10 @@ This project enables **blind benchmarking** of 4 different LLMs across 3 distinc
 
 - **Blind Benchmarking:** Participants interact with 4 different models (e.g., GPT-5.4, Claude Sonnet 4.6, Gemini 3.1 Pro, Grok 4.20) without knowing which one they are using ("Agent A, B, C, or D"). An identity guard strictly prevents the models from revealing their true names.
 - **Task Counterbalancing:** Pre-assigned, matched-difficulty questions ensure fairness and validity across the experiment runs without confounding agent performance with task difficulty.
+- **Three Primary Behavioral Outcomes:**
+  - 💻 **Reliance Index:** How quickly and how often users reach for AI help instead of trying themselves.
+  - 📝 **Content Persistence:** How much of the AI's output survives in the final answer.
+  - ⚠️ **Automation Bias:** Whether users follow obviously wrong AI hints when they shouldn't (via seeded Faulty‑AI probe run).
 - **Three Core Task Types:**
   - 💻 **Coding:** A Monaco-editor-powered Python IDE with task prompts and a conversational AI guide.
   - 🧩 **Logic Puzzles:** A UI that tracks hint requests and reasoning logic against strict logic problems.
@@ -55,8 +59,8 @@ Access the participant UI at `http://localhost:3000` and the hidden admin consol
 
 ## 📖 Documentation
 
-For full architectural transparency, rationale on engineering decisions, comprehensive database schemas, log event dictionaries, and the full experimental protocol, please refer to the `docs/` folder:
+For full architectural transparency, rationale on engineering decisions, comprehensive database schemas, log event dictionaries, and the full experimental protocol, please refer to the `.claude/` folder (auto-read on session start):
 
-- [`docs/Project-Overview.md`](./docs/Project-Overview.md) - The core technical index of our decisions.
-- [`docs/Experimental-Protocol.md`](./docs/Experimental-Protocol.md) - The research design, research questions, constraints, and metrics.
-- [`.agent/workflows/SKILL.md`](./.agent/workflows/SKILL.md) - Guidelines and skills learned for extending this platform.
+- [`.claude/Project-Overview.md`](.claude/Project-Overview.md) - The core technical index of our decisions.
+- [`.claude/Experimental-Protocol.md`](.claude/Experimental-Protocol.md) - The research design, research questions, constraints, and metrics.
+- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) - AI assistance context and important constraints.

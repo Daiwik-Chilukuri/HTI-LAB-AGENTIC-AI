@@ -18,14 +18,14 @@ interface TlxQuestion {
   sub_label: string;
   low_label: string;
   high_label: string;
-  scale_type: "likert5" | "likert7" | "likert21";
+  scale_type: "likert5" | "likert7";
   scale_group: "nasa_tlx" | "ai_subjective" | "custom";
   task_scope: string;
   display_order: number;
 }
 
-const SCALE_MAX: Record<string, number>     = { likert5: 5, likert7: 7, likert21: 21 };
-const SCALE_DEFAULT: Record<string, number> = { likert5: 3, likert7: 4, likert21: 11 };
+const SCALE_MAX: Record<string, number>     = { likert5: 5, likert7: 7 };
+const SCALE_DEFAULT: Record<string, number> = { likert5: 3, likert7: 4 };
 
 const GROUP_LABELS: Record<string, { label: string; color: string }> = {
   nasa_tlx:      { label: "NASA Task Load Index",         color: "var(--accent-blue)" },

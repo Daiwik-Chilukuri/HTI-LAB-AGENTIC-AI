@@ -46,6 +46,35 @@ export async function GET(request: NextRequest) {
         : 'SELECT * FROM interaction_logs ORDER BY timestamp ASC LIMIT 5000'
     ).all(...pidP) as Record<string, unknown>[];
 
+    const debriefResponses = db.prepare(
+      filterPid
+        ? 'SELECT * FROM debrief_responses WHERE participant_id=? ORDER BY submitted_at ASC'
+        : 'SELECT * FROM debrief_responses ORDER BY submitted_at ASC'
+    ).all(...pidP) as Record<string, unknown>[];
+
+    const postStudyResponses = db.prepare(
+      filterPid
+        ? `SELECT r.*, q.question_text, q.question_type
+           FROM global_survey_responses r
+           JOIN global_survey_questions q ON q.id = r.question_id
+           WHERE r.participant_id=?
+           ORDER BY q.display_order ASC, r.id ASC`
+        : `SELECT r.*, q.question_text, q.question_type
+           FROM global_survey_responses r
+           JOIN global_survey_questions q ON q.id = r.question_id
+           ORDER BY q.display_order ASC, r.id ASC`
+    ).all(...pidP) as Record<string, unknown>[];
+
+    const demographicResponses = db.prepare(
+      filterPid
+        ? `SELECT dr.*, dq.question_text, dq.question_type, dq.options
+           FROM demographic_responses dr JOIN demographic_questions dq ON dq.id=dr.question_id
+           WHERE dr.participant_id=? ORDER BY dr.submitted_at ASC`
+        : `SELECT dr.*, dq.question_text, dq.question_type, dq.options
+           FROM demographic_responses dr JOIN demographic_questions dq ON dq.id=dr.question_id
+           ORDER BY dr.submitted_at ASC`
+    ).all(...pidP) as Record<string, unknown>[];
+
     // ── Per-run aggregated stats (for rich log view) ───────────────
     const runStats = db.prepare(`
       SELECT
@@ -76,21 +105,42 @@ export async function GET(request: NextRequest) {
         lines.push([r.participant_id,r.session_id,r.run_id,r.task_type,r.model_id,r.question_id,csvCell(r.question_text),r.scale_group,r.scale_type,r.answer,r.submitted_at].map(csvCell).join(','));
       }
 
-      // ── Section 2: Runs ──────────────────────────────────────────
+      // ── Section 2: Demographic Responses ─────────────────────────
+      lines.push('\n=== DEMOGRAPHIC RESPONSES ===');
+      lines.push(['participant_id','session_id','question_id','question_text','question_type','response_text','submitted_at'].join(','));
+      for (const dr of demographicResponses) {
+        lines.push([dr.participant_id,dr.session_id,dr.question_id,csvCell(dr.question_text as string),dr.question_type,csvCell(dr.response_text as string),dr.submitted_at].map(csvCell).join(','));
+      }
+
+      // ── Section 3: Runs ──────────────────────────────────────────
       lines.push('\n=== RUNS ===');
       lines.push(['run_id','session_id','participant_id','run_number','task_type','task_id','model_id','started_at','completed_at'].join(','));
       for (const r of runs) {
         lines.push([r.id,r.session_id,r.participant_id,r.run_number,r.task_type,r.task_id,r.model_id,r.started_at,r.completed_at].map(csvCell).join(','));
       }
 
-      // ── Section 3: Interaction logs ──────────────────────────────
+      // ── Section 4: Post-Study Survey Responses ───────────────────
+      lines.push('\n=== POST-STUDY SURVEY RESPONSES ===');
+      lines.push(['id','participant_id','session_id','question_id','question_text','question_type','response_text','submitted_at'].join(','));
+      for (const e of postStudyResponses) {
+        lines.push([e.id,e.participant_id,e.session_id,e.question_id,csvCell(e.question_text as string),e.question_type,csvCell(e.response_text as string),e.submitted_at].map(csvCell).join(','));
+      }
+
+      // ── Section 5: Interaction logs ──────────────────────────────
+      lines.push('\n=== DEBRIEF RESPONSES ===');
+      lines.push(['id','participant_id','session_id','rankings','open_comments','submitted_at'].join(','));
+      for (const d of debriefResponses) {
+        lines.push([d.id,d.participant_id,d.session_id,csvCell(d.rankings as string),csvCell(d.open_comments as string),d.submitted_at].map(csvCell).join(','));
+      }
+
+      // ── Section 5: Interaction logs ──────────────────────────────
       lines.push('\n=== INTERACTION LOGS ===');
       lines.push(['log_id','participant_id','run_id','event_type','event_data','timestamp'].join(','));
       for (const l of logs) {
         lines.push([l.id,l.participant_id,l.run_id,l.event_type,csvCell(l.event_data),l.timestamp].map(csvCell).join(','));
       }
 
-      // ── Section 4: Per-run stats ─────────────────────────────────
+      // ── Section 5: Per-run stats ─────────────────────────────────
       lines.push('\n=== RUN STATS ===');
       lines.push(['run_id','participant_id','total_events','chat_msgs_sent','chat_msgs_received','hints_requested','code_runs','ai_actions','suggestions_accepted','suggestions_dismissed'].join(','));
       for (const s of runStats) {
@@ -109,13 +159,16 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      participants, sessions, runs, responses, logs, runStats,
+      participants, sessions, runs, responses, logs, runStats, demographicResponses, debriefResponses, postStudyResponses,
       stats: {
         participant_count: participants.length,
         session_count:     sessions.length,
         run_count:         runs.length,
         response_count:    responses.length,
         log_count:         logs.length,
+        demographic_response_count: demographicResponses.length,
+        debrief_response_count: debriefResponses.length,
+        post_study_response_count: postStudyResponses.length,
       },
     });
   } catch (error: unknown) {
@@ -145,6 +198,7 @@ export async function DELETE(request: NextRequest) {
         // Delete leaves → roots: responses/logs before runs, runs before sessions, sessions before participants
         const tables = [
           'survey_responses',   // FK → runs, tlx_questions
+          'demographic_responses', // FK → participants
           'interaction_logs',   // FK → runs
           'debrief_responses',  // FK → sessions, participants
           'runs',               // FK → sessions, participants

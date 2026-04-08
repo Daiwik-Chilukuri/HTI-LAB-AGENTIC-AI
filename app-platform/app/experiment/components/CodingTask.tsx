@@ -15,6 +15,7 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
 
 interface CodingTaskProps {
   runId: string; modelId: string; participantId: string; sessionId: string; taskId?: number;
+  onTaskComplete?: () => void;
 }
 interface CodingProblem {
   id: number; title: string; description: string; function_signature: string;
@@ -27,18 +28,63 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T 
   return ((...args: unknown[]) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); }) as T;
 }
 
-export default function CodingTask({ runId, modelId, participantId, sessionId, taskId = 0 }: CodingTaskProps) {
+export default function CodingTask({ runId, modelId, participantId, sessionId, taskId = 0, onTaskComplete }: CodingTaskProps) {
   const [problem, setProblem]       = useState<CodingProblem | null>(null);
   const [loading, setLoading]       = useState(true);
   const [code, setCode]             = useState("# Write your solution here\n");
   const [output, setOutput]         = useState("");
   const [running, setRunning]       = useState(false);
   const [testResults, setTestResults] = useState<{passed:number;failed:number;total:number}|null>(null);
-  const editorRef                   = useRef<unknown>(null);
-  const editCountRef                = useRef(0);
-  const startTimeRef                = useRef<number>(Date.now());
-  const firstSuccessRef             = useRef<boolean>(false);
-  const starterCodeRef              = useRef<string>("");
+  const [submitted, setSubmitted]     = useState(false);
+
+  // Panel dimensions (resizable)
+  const [leftWidth, setLeftWidth]   = useState(280);
+  const [outputHeight, setOutputHeight] = useState(120);
+  const [chatWidth, setChatWidth]   = useState(340);
+
+  // Which panel is being dragged
+  const [dragType, setDragType] = useState<'left' | 'output' | 'chat' | null>(null);
+  const dragStartX      = useRef(0);
+  const dragStartY      = useRef(0);
+  const dragStartValue  = useRef(0);
+
+  // Refs for tracking
+  const editCountRef       = useRef(0);
+  const starterCodeRef     = useRef("");
+  const startTimeRef       = useRef(Date.now());
+  const firstSuccessRef    = useRef(false);
+  const totalCopyCountRef  = useRef(0);
+
+  const startDrag = useCallback((type: 'left' | 'output' | 'chat', e: React.MouseEvent, currentValue: number) => {
+    e.preventDefault();
+    setDragType(type);
+    dragStartX.current = e.clientX;
+    dragStartY.current = e.clientY;
+    dragStartValue.current = currentValue;
+  }, []);
+
+  useEffect(() => {
+    if (!dragType) return;
+    const onMouseMove = (e: MouseEvent) => {
+      if (dragType === 'left') {
+        const delta = e.clientX - dragStartX.current;
+        setLeftWidth(Math.min(450, Math.max(180, dragStartValue.current + delta)));
+      } else if (dragType === 'output') {
+        const delta = dragStartY.current - e.clientY;
+        setOutputHeight(Math.min(350, Math.max(60, dragStartValue.current + delta)));
+      } else if (dragType === 'chat') {
+        const delta = e.clientX - dragStartX.current;
+        setChatWidth(Math.min(600, Math.max(200, dragStartValue.current - delta)));
+      }
+    };
+    const onMouseUp = () => setDragType(null);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [dragType]);
 
   // 30-second engagement heartbeat
   useTaskHeartbeat({ runId, participantId });
@@ -90,37 +136,66 @@ export default function CodingTask({ runId, modelId, participantId, sessionId, t
 
   const handleCodeChange = (val: string | undefined) => { setCode(val || ""); logCodeEdit(); };
 
-  const handleRun = useCallback((isSubmit = false) => {
+  const handleCodeCopied = useCallback(({ charCount, lineCount, timeSinceGenerationMs }: { code: string; charCount: number; lineCount: number; timeSinceGenerationMs: number }) => {
+    totalCopyCountRef.current += 1;
+    logEvent({ run_id: runId, participant_id: participantId, event_type: "code_block_copied",
+      event_data: {
+        char_count: charCount,
+        line_count: lineCount,
+        time_since_generation_ms: timeSinceGenerationMs,
+        total_copy_count: totalCopyCountRef.current,
+        model_id: modelId,
+      },
+    });
+  }, [runId, participantId, modelId]);
+
+  const handleRun = useCallback(async (isSubmit = false) => {
     setRunning(true);
     const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000);
     logEvent({ run_id: runId, participant_id: participantId, event_type: "code_run",
       event_data: { char_count: code.length, model_id: modelId, elapsed_sec: elapsedSec, is_submit: isSubmit } });
-    setTimeout(() => {
-      // Simulated results — wire up Pyodide/backend executor for real pass@k
-      const total = problem ? (() => { try { return JSON.parse(problem.unit_tests).length; } catch { return 0; } })() : 0;
-      const passed = Math.min(editCountRef.current > 0 ? Math.ceil(total * 0.5) : 0, total); // placeholder
-      const allPassed = passed === total && total > 0;
-      const res = { passed, failed: total - passed, total };
-      setTestResults(res);
+
+    try {
+      const unitTests: string[] = problem ? (() => { try { return JSON.parse(problem.unit_tests); } catch { return []; } })() : [];
+      const res = await fetch('/api/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, unit_tests: unitTests }),
+      });
+      const data = await res.json();
+      const { tests_passed = 0, tests_failed = 0, tests_total = 0, all_passed = false, stderr = '', user_output = '' } = data;
+
+      setTestResults({ passed: tests_passed, failed: tests_failed, total: tests_total });
       logEvent({ run_id: runId, participant_id: participantId, event_type: "code_run_result",
-        event_data: { tests_passed: res.passed, tests_failed: res.failed, tests_total: res.total,
-                      pass_at_1: allPassed, elapsed_sec: elapsedSec, ...codeMetrics(code) } });
-      if (allPassed && !firstSuccessRef.current) {
+        event_data: { tests_passed, tests_failed, tests_total,
+                      pass_at_1: all_passed, elapsed_sec: elapsedSec, ...codeMetrics(code) } });
+
+      if (all_passed && !firstSuccessRef.current) {
         firstSuccessRef.current = true;
         logEvent({ run_id: runId, participant_id: participantId, event_type: "first_success",
           event_data: { time_to_first_success_sec: elapsedSec, ...codeMetrics(code) } });
       }
+
       if (isSubmit) {
+        setSubmitted(true);
         logEvent({ run_id: runId, participant_id: participantId, event_type: "task_complete",
-          event_data: { task_type: "coding", time_to_complete_sec: elapsedSec, final_pass_at_1: allPassed,
-                        tests_passed: res.passed, tests_total: res.total, ...codeMetrics(code) } });
+          event_data: { task_type: "coding", time_to_complete_sec: elapsedSec, final_pass_at_1: all_passed,
+                        tests_passed, tests_total, ...codeMetrics(code) } });
+        onTaskComplete?.();
       }
-      setOutput(allPassed
-        ? `✅ All ${total} tests passed!\n${code.slice(0, 200)}`
-        : `❌ ${res.passed}/${total} tests passed.\n▶ Simulated — connect Pyodide for real execution.\n\n${code.slice(0, 200)}`);
-      setRunning(false);
-    }, 800);
-  }, [runId, participantId, code, modelId, problem]);
+
+      const statusLine = all_passed
+        ? `✅ All ${tests_total} tests passed!`
+        : `❌ ${tests_passed}/${tests_total} tests passed`;
+      const errorLine = stderr ? `\n⚠️ ${stderr}` : '';
+      const outputLines = (user_output || code.slice(0, 200)).split('\n').slice(0, 10);
+      setOutput([statusLine + errorLine, '', ...outputLines].join('\n'));
+    } catch {
+      setOutput('❌ Execution failed — could not reach /api/execute. Is the server running?');
+    }
+
+    setRunning(false);
+  }, [runId, participantId, code, modelId, problem, onTaskComplete]);
 
   const unitTests: string[] = problem
     ? (() => { try { return JSON.parse(problem.unit_tests); } catch { return []; } })()
@@ -143,9 +218,18 @@ export default function CodingTask({ runId, modelId, participantId, sessionId, t
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 340px", height: "100%", gap: 1 }}>
-      {/* Left – Problem */}
-      <div style={{ padding: 20, overflowY: "auto", borderRight: "1px solid var(--border-subtle)", background: "var(--bg-secondary)" }}>
+    <div style={{ display: "flex", height: "100%" }}>
+      {/* Left – Problem (resizable) */}
+      <div style={{ width: leftWidth, flexShrink: 0, padding: 20, overflowY: "auto", borderRight: "1px solid var(--border-subtle)", background: "var(--bg-secondary)", position: "relative" }}>
+        {/* Drag handle – left panel edge */}
+        <div
+          onMouseDown={(e) => startDrag('left', e, leftWidth)}
+          style={{
+            position: "absolute", top: 0, right: -3, bottom: 0, width: 6, cursor: "ew-resize",
+            background: dragType === 'left' ? 'var(--accent-blue)' : 'transparent',
+            transition: 'background 0.15s', zIndex: 1,
+          }}
+        />
         <div className="flex items-center gap-2" style={{ marginBottom: 16 }}>
           <span className="badge badge-blue">Coding</span>
           <span className={`badge ${problem.difficulty === "easy" ? "badge-emerald" : problem.difficulty === "hard" ? "badge-rose" : "badge-amber"}`}>{problem.difficulty}</span>
@@ -166,50 +250,83 @@ export default function CodingTask({ runId, modelId, participantId, sessionId, t
         )}
       </div>
 
-      {/* Centre – Editor */}
-      <div style={{ display: "flex", flexDirection: "column", background: "var(--bg-primary)" }}>
+      {/* Centre – Editor + Output overlay */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg-primary)", minWidth: 0, position: "relative" }}>
+        {/* Toolbar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-secondary)" }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: "var(--text-muted)" }}>solution.py</span>
           <div className="flex gap-2">
             <button className="btn btn-secondary btn-sm" onClick={() => handleRun(false)} disabled={running}>
               {running ? "Running..." : "▶ Run"}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={() => handleRun(true)} disabled={running}>
-              ✓ Submit
+            <button className="btn btn-primary btn-sm" onClick={() => handleRun(true)} disabled={running || submitted}>
+              {submitted ? "Submitted" : "Submit"}
             </button>
           </div>
         </div>
-        <div style={{ flex: 1 }}>
-          <MonacoEditor height="100%" language="python" theme="vs-dark" value={code}
+
+        {/* Editor – fills all space; output floats on top */}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <MonacoEditor
+            height="100%"
+            language="python"
+            value={code}
             onChange={handleCodeChange}
-            onMount={(editor: unknown) => { editorRef.current = editor; }}
-            options={{ fontSize: 14, fontFamily: "'JetBrains Mono', monospace", minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 12 }, lineNumbers: "on", bracketPairColorization: { enabled: true }, automaticLayout: true }}
+            theme="vs-dark"
+            options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false, automaticLayout: true }}
           />
         </div>
-        <div style={{ height: 120, background: "var(--bg-tertiary)", borderTop: "1px solid var(--border-subtle)", padding: "8px 16px", overflowY: "auto" }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Output</span>
-          <pre style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: output.includes("Error") ? "var(--accent-rose)" : "var(--accent-emerald)", marginTop: 4, whiteSpace: "pre-wrap" }}>
-            {output || "Run your code to see output here."}
-          </pre>
+
+        {/* Drag handle – anchored to bottom of container (top of output) */}
+        <div
+          onMouseDown={(e) => startDrag('output', e, outputHeight)}
+          style={{
+            position: "absolute", top: "auto", left: 0, right: 0, bottom: `${outputHeight}px`,
+            height: 4, cursor: 'ns-resize',
+            background: dragType === 'output' ? 'var(--accent-blue)' : 'var(--border-subtle)',
+            transition: 'background 0.15s', zIndex: 2,
+          }}
+        />
+
+        {/* Output section – positioned at bottom, grows upward into editor */}
+        <div
+          style={{
+            position: "absolute", bottom: 0, left: 0, right: 0,
+            height: outputHeight,
+            background: "var(--bg-tertiary)", overflowY: "auto", zIndex: 1,
+          }}
+        >
+          <div style={{ padding: "8px 16px" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Output</span>
+            <pre style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: output.includes("Error") ? "var(--accent-rose)" : "var(--accent-emerald)", marginTop: 4, whiteSpace: "pre-wrap" }}>
+              {output || "Run your code to see output here."}
+            </pre>
+          </div>
         </div>
       </div>
 
+      {/* Drag handle */}
+      <div
+        onMouseDown={(e) => startDrag('chat', e, chatWidth)}
+        style={{
+          width: 4, cursor: 'ew-resize',
+          background: dragType === 'chat' ? 'var(--accent-blue)' : 'var(--border-subtle)',
+          transition: 'background 0.15s', flexShrink: 0,
+        }}
+      />
+
       {/* Right – AI Chat */}
-      <div style={{ borderLeft: "1px solid var(--border-subtle)" }}>
+      <div style={{ width: chatWidth, flexShrink: 0, borderLeft: "1px solid var(--border-subtle)", overflow: 'hidden' }}>
         <AIChatPanel
           modelId={modelId} runId={runId} participantId={participantId}
+          onCodeCopied={handleCodeCopied}
           systemPrompt={[
             `You are an AI coding assistant for a research study. The participant is working on this Python problem:`,
             `Title: ${problem.title}`,
             `Description: ${problem.description}`,
             `Function signature: ${problem.function_signature}`,
             ``,
-            `YOUR ROLE IS TO GUIDE, NOT TO SOLVE FOR THEM. Follow these rules strictly:`,
-            `1. WAIT FOR A SPECIFIC QUESTION. If the user sends a vague message ("hello", "hi", "help", "start") do NOT write any code or explain the solution. Instead, ask them where they're stuck or what part they need help with.`,
-            `2. NEVER write a complete solution or a complete working function.`,
-            `3. You may show small code snippets (1-3 lines) to illustrate a concept, but never the full answer.`,
-            `4. Guide by: asking what they've tried, explaining relevant Python concepts, pointing out what direction to think, reviewing their current code for logic errors.`,
-            `5. If the user asks for the full solution directly, decline and instead offer hints to help them arrive at it themselves.`,
+            `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may provide code examples, explain concepts, review their code, or offer full solutions — respond however best addresses what they're asking.`,
           ].join('\n')}
           contextInfo={`Current code:\n${code}`}
         />

@@ -7,13 +7,14 @@ import { useTaskHeartbeat } from "@/lib/useTaskHeartbeat";
 
 interface PuzzleTaskProps {
   runId: string; modelId: string; participantId: string; sessionId: string; taskId?: number;
+  onTaskComplete?: () => void;
 }
 interface PuzzleData {
   id: number; title: string; prompt: string; elements: string;
   correct_solution: string; hints: string; difficulty: string;
 }
 
-export default function PuzzleTask({ runId, modelId, participantId, sessionId, taskId = 0 }: PuzzleTaskProps) {
+export default function PuzzleTask({ runId, modelId, participantId, sessionId, taskId = 0, onTaskComplete }: PuzzleTaskProps) {
   const [puzzle, setPuzzle]       = useState<PuzzleData | null>(null);
   const [loading, setLoading]     = useState(true);
   const [answer, setAnswer]       = useState("");
@@ -22,9 +23,35 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
   const [loadingHint, setLoadingHint] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean|null>(null);
+  const [chatWidth, setChatWidth] = useState(340);
+  const [isDragging, setIsDragging] = useState(false);
   const startTimeRef   = useRef<number>(Date.now());
   const overrideCountRef = useRef(0);
   const lastAnswerWithHint = useRef("");
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(340);
+
+  // Drag-to-resize for the chat panel
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = chatWidth;
+  }, [chatWidth]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - dragStartX.current;
+      setChatWidth(Math.min(600, Math.max(200, dragStartWidth.current - delta)));
+    };
+    const onMouseUp = () => setIsDragging(false);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isDragging]);
 
   // 30-second engagement heartbeat
   useTaskHeartbeat({ runId, participantId });
@@ -108,6 +135,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
     logEvent({ run_id: runId, participant_id: participantId, event_type: "task_complete",
       event_data: { task_type: "puzzle", is_correct: correct, hints_used: hintCount,
                     time_to_complete_sec: elapsedSec, overrides: overrideCountRef.current } });
+    onTaskComplete?.();
   };
 
   if (loading) return (
@@ -127,8 +155,8 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", height: "100%", gap: 1 }}>
-      <div style={{ display: "flex", flexDirection: "column", padding: 24, overflowY: "auto" }}>
+    <div style={{ display: "flex", height: "100%" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24, overflowY: "auto", minWidth: 0 }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 16 }}>
           <span className="badge badge-amber">Logic Puzzle</span>
           <span className={`badge ${puzzle.difficulty === "easy" ? "badge-emerald" : puzzle.difficulty === "hard" ? "badge-rose" : "badge-amber"}`}>{puzzle.difficulty}</span>
@@ -181,17 +209,24 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
         </div>
       </div>
 
-      <div style={{ borderLeft: "1px solid var(--border-subtle)" }}>
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        style={{
+          width: 4, cursor: isDragging ? 'col-resize' : 'ew-resize',
+          background: isDragging ? 'var(--accent-blue)' : 'var(--border-subtle)',
+          transition: 'background 0.15s', flexShrink: 0,
+        }}
+      />
+
+      {/* Right – AI Chat */}
+      <div style={{ width: chatWidth, flexShrink: 0, borderLeft: "1px solid var(--border-subtle)", overflow: 'hidden' }}>
         <AIChatPanel modelId={modelId} runId={runId} participantId={participantId}
           systemPrompt={[
             `You are an AI reasoning assistant for a research study. The participant is working on this logic puzzle:`,
             `"${puzzle.prompt}"`,
             ``,
-            `YOUR ROLE IS TO GUIDE THEIR THINKING, NOT TO SOLVE IT FOR THEM. Follow these rules strictly:`,
-            `1. WAIT FOR A SPECIFIC QUESTION. If the user sends a vague message ("hello", "hi", "help", "start", "hint") do NOT reveal the answer or explain the full solution. Instead, ask what part of the puzzle they find confusing or where their current thinking has led them.`,
-            `2. NEVER state the correct answer directly, even if the user pressures you.`,
-            `3. Guide by: asking what they've tried, helping them identify which constraints they've applied, pointing at ONE constraint at a time to consider.`,
-            `4. If the user asks for the answer directly, decline and offer a guiding question instead.`,
+            `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may explain your reasoning, provide hints, give partial or full solutions, or guide with questions — respond however best addresses what they're asking.`,
           ].join('\n')}
         />
       </div>

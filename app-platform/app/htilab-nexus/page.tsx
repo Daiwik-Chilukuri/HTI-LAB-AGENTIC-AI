@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 // ── Types ──────────────────────────────────────────────────────────
 type TaskTab    = "coding" | "puzzle" | "writing";
 type ScopeTab   = "all" | "coding" | "puzzle" | "writing";
-type AdminTab   = "tasks" | "tlx" | "data" | "global";
+type AdminTab   = "tasks" | "tlx" | "data" | "global" | "demographic";
 
 interface AnyTask {
   id: number; title: string; difficulty: string; created_at: string;
@@ -20,7 +20,7 @@ interface TlxQuestion {
   sub_label: string;
   low_label: string;
   high_label: string;
-  scale_type: "likert5" | "likert7" | "likert21";
+  scale_type: "likert5" | "likert7";
   scale_group: "nasa_tlx" | "ai_subjective" | "custom";
   display_order: number;
   active: number;
@@ -53,6 +53,16 @@ interface RunStat {
   suggestions_accepted: number; suggestions_dismissed: number;
   first_event: string | null; last_event: string | null;
 }
+interface DemographicResponse {
+  id: number; participant_id: string; session_id: string;
+  question_id: number; question_text: string; question_type: string;
+  response_text: string; submitted_at: string;
+}
+interface PostStudyResponse {
+  id: number; participant_id: string; session_id: string;
+  question_id: number; question_text: string; question_type: string;
+  response_text: string; submitted_at: string;
+}
 interface LogEntry {
   id: number; run_id: string; participant_id: string;
   event_type: string; event_data: string; timestamp: string;
@@ -65,12 +75,17 @@ interface GlobalQuestion {
   display_order: number; active: number; created_at: string;
 }
 
+interface DemographicQuestion {
+  id: number; question_text: string; question_type: string;
+  options: string; display_order: number; active: number; created_at: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────
 const SCOPE_COLOR: Record<string, string> = {
   all: "badge-teal", coding: "badge-blue", puzzle: "badge-amber", writing: "badge-emerald",
 };
 const SCALE_LABEL: Record<string, string> = {
-  likert5: "1–5", likert7: "1–7", likert21: "1–21",
+  likert5: "1–5", likert7: "1–7",
 };
 const GROUP_LABEL: Record<string, string> = {
   nasa_tlx: "NASA-TLX", ai_subjective: "AI Subjective", custom: "Custom",
@@ -151,11 +166,17 @@ export default function NexusAdminPage() {
   // ── Model configs ──────────────────────────────────────────────
   const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([]);
 
-  // ── Global Survey tab ──────────────────────────────────────────
+  // ── Post-Study Survey tab ──────────────────────────────────────
   const [globalQuestions, setGlobalQuestions] = useState<GlobalQuestion[]>([]);
   const [showGlobalForm, setShowGlobalForm]   = useState(false);
   const [globalForm, setGlobalForm]           = useState({ question_text: "", question_type: "open_ended", display_order: "99" });
   const [loadingGlobal, setLoadingGlobal]     = useState(false);
+
+  // ── Pre-Study Survey tab ──────────────────────────────────────
+  const [demographicQuestions, setDemographicQuestions] = useState<DemographicQuestion[]>([]);
+  const [showDemographicForm, setShowDemographicForm]   = useState(false);
+  const [demographicForm, setDemographicForm]           = useState({ question_text: "", question_type: "text", options: "", display_order: "99" });
+  const [loadingDemographic, setLoadingDemographic]     = useState(false);
 
   // ── Data tab ───────────────────────────────────────────────────
   const [participants, setParticipants]   = useState<Participant[]>([]);
@@ -164,7 +185,12 @@ export default function NexusAdminPage() {
   const [allRuns, setAllRuns]             = useState<RunRecord[]>([]);
   const [allRunStats, setAllRunStats]     = useState<RunStat[]>([]);
   const [allLogs, setAllLogs]             = useState<LogEntry[]>([]);
+  const [allDemographicResponses, setAllDemographicResponses] = useState<DemographicResponse[]>([]);
+  const [allPostStudyResponses, setAllPostStudyResponses] = useState<PostStudyResponse[]>([]);
   const [loadingData, setLoadingData]     = useState(false);
+  const [expandedSurveyRuns, setExpandedSurveyRuns] = useState<Set<string>>(new Set());
+  const [expandedGlobalSurvey, setExpandedGlobalSurvey] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState("");
   const [expandedParticipant, setExpandedParticipant] = useState<string | null>(null);
   const [expandedRun, setExpandedRun]     = useState<string | null>(null);
   const [exporting, setExporting]         = useState(false);
@@ -214,7 +240,9 @@ export default function NexusAdminPage() {
       setAllRuns(data.runs             || []);
       setAllRunStats(data.runStats     || []);
       setAllLogs(data.logs             || []);
-    } catch { setParticipants([]); setAllResponses([]); setAllSessions([]); setAllRuns([]); setAllRunStats([]); setAllLogs([]); }
+      setAllDemographicResponses(data.demographicResponses || []);
+      setAllPostStudyResponses(data.postStudyResponses || []);
+    } catch { setParticipants([]); setAllResponses([]); setAllSessions([]); setAllRuns([]); setAllRunStats([]); setAllLogs([]); setAllDemographicResponses([]); setAllPostStudyResponses([]); }
     finally { setLoadingData(false); }
   }, []);
 
@@ -232,6 +260,52 @@ export default function NexusAdminPage() {
     finally { setLoadingGlobal(false); }
   }, []);
   useEffect(() => { if (adminTab === "global") fetchGlobalQ(); }, [adminTab, fetchGlobalQ]);
+
+  const fetchDemographicQ = useCallback(async () => {
+    setLoadingDemographic(true);
+    try {
+      const res  = await fetch("/api/demographic?active=0");
+      const data = await res.json();
+      setDemographicQuestions(data.questions || []);
+    } catch { setDemographicQuestions([]); }
+    finally { setLoadingDemographic(false); }
+  }, []);
+  useEffect(() => { if (adminTab === "demographic") fetchDemographicQ(); }, [adminTab, fetchDemographicQ]);
+
+  const handleCreateDemographicQ = async () => {
+    if (!demographicForm.question_text.trim()) return;
+    let options: string[] = [];
+    if (demographicForm.question_type === "select") {
+      try { options = JSON.parse(demographicForm.options); } catch { options = []; }
+    }
+    await fetch("/api/demographic", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        _admin: true,
+        question_text: demographicForm.question_text,
+        question_type: demographicForm.question_type,
+        options: JSON.stringify(options),
+        display_order: parseInt(demographicForm.display_order) || 99,
+      }),
+    });
+    setShowDemographicForm(false);
+    setDemographicForm({ question_text: "", question_type: "text", options: "", display_order: "99" });
+    fetchDemographicQ();
+  };
+
+  const handleDeleteDemographicQ = async (id: number) => {
+    if (!confirm("Delete this question?")) return;
+    await fetch(`/api/demographic?id=${id}`, { method: "DELETE" });
+    fetchDemographicQ();
+  };
+
+  const handleToggleDemographicQ = async (q: DemographicQuestion) => {
+    await fetch("/api/demographic", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: q.id, active: q.active === 1 ? 0 : 1 }),
+    });
+    fetchDemographicQ();
+  };
 
   const handleCreateGlobalQ = async () => {
     if (!globalForm.question_text.trim()) return;
@@ -333,12 +407,13 @@ export default function NexusAdminPage() {
 
   // ── Clear session data ─────────────────────────────────────────
   const handleClearData = async () => {
-    if (!confirm('⚠️ This will permanently delete ALL participant sessions, runs, survey responses, and interaction logs.\n\nTLX questions and task database will be preserved.\n\nAre you absolutely sure?')) return;
+    if (clearConfirmText !== 'DELETE') return;
+    if (!confirm('⚠️ This will permanently delete ALL participant sessions, runs, survey responses, demographic responses, and interaction logs.\n\nTLX questions and task definitions will be preserved.\n\nAre you absolutely sure?')) return;
     setClearing(true);
     try {
       const res  = await fetch('/api/data?confirm=yes', { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) { await fetchData(); }
+      if (data.success) { await fetchData(); setClearConfirmText(''); }
       else { alert('Error clearing data: ' + data.error); }
     } catch { alert('Network error while clearing data.'); }
     finally { setClearing(false); }
@@ -349,6 +424,7 @@ export default function NexusAdminPage() {
   const runsForParticipant      = (pid: string) => allRuns.filter(r => r.participant_id === pid);
   const statForRun              = (rid: string) => allRunStats.find(s => s.run_id === rid);
   const logsForRun              = (rid: string) => allLogs.filter(l => l.run_id === rid);
+  const demographicResponsesForParticipant = (pid: string) => allDemographicResponses.filter(d => d.participant_id === pid);
 
   // Resolve agent_id (e.g. 'agent_a') to full model name (e.g. 'openai/gpt-4o')
   const resolveModelName = (agentId: string): string => {
@@ -388,7 +464,11 @@ export default function NexusAdminPage() {
             📊 Data &amp; Export
           </button>
           <button className={`tab ${adminTab === "global" ? "active" : ""}`} onClick={() => setAdminTab("global")}>
-            🌐 Global Survey
+            🌐 Post-Study Survey
+          </button>
+          <button className={`tab ${adminTab === "demographic" ? "active" : ""}`} onClick={() => setAdminTab("demographic")}
+            style={{ flexDirection: "column", alignItems: "center", whiteSpace: "nowrap" }}>
+            📝 Pre-Study<br />Survey
           </button>
         </div>
 
@@ -532,7 +612,7 @@ export default function NexusAdminPage() {
                       </select></div>
                     <div><label className="label">Scale</label>
                       <select className="input" value={qForm.scale_type} onChange={e => setQForm(p => ({ ...p, scale_type: e.target.value }))}>
-                        <option value="likert7">1 – 7 (Likert)</option><option value="likert5">1 – 5 (Likert)</option><option value="likert21">1 – 21 (NASA-TLX standard)</option>
+                        <option value="likert7">1 – 7 (Likert)</option><option value="likert5">1 – 5 (Likert)</option>
                       </select></div>
                     <div><label className="label">Low-end Label</label>
                       <input className="input" placeholder="Not at all" value={qForm.low_label} onChange={e => setQForm(p => ({ ...p, low_label: e.target.value }))} /></div>
@@ -562,7 +642,7 @@ export default function NexusAdminPage() {
                       </select></div>
                     <div><label className="label">Scale</label>
                       <select className="input" value={editingQ.scale_type} onChange={e => setEditingQ(p => p ? { ...p, scale_type: e.target.value as TlxQuestion["scale_type"] } : p)}>
-                        <option value="likert7">1 – 7</option><option value="likert5">1 – 5</option><option value="likert21">1 – 21</option>
+                        <option value="likert7">1 – 7</option><option value="likert5">1 – 5</option>
                       </select></div>
                     <div><label className="label">Low Label</label><input className="input" value={editingQ.low_label} onChange={e => setEditingQ(p => p ? { ...p, low_label: e.target.value } : p)} /></div>
                     <div><label className="label">High Label</label><input className="input" value={editingQ.high_label} onChange={e => setEditingQ(p => p ? { ...p, high_label: e.target.value } : p)} /></div>
@@ -625,13 +705,14 @@ export default function NexusAdminPage() {
         {adminTab === "data" && (
           <>
             {/* Stats bar */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 14, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 14, marginBottom: 24 }}>
               {[
-                { label: "Participants",       value: participants.length, color: "var(--accent-teal)" },
-                { label: "Sessions",           value: allSessions.length,  color: "var(--accent-blue)" },
-                { label: "Runs",               value: allRuns.length,      color: "var(--accent-amber)" },
-                { label: "Survey Responses",   value: allResponses.length, color: "var(--accent-emerald)" },
-                { label: "Interaction Events", value: allLogs.length,      color: "var(--accent-rose)" },
+                { label: "Participants",         value: participants.length,            color: "var(--accent-teal)" },
+                { label: "Sessions",             value: allSessions.length,              color: "var(--accent-blue)" },
+                { label: "Runs",               value: allRuns.length,                  color: "var(--accent-amber)" },
+                { label: "Survey Responses",    value: allResponses.length,             color: "var(--accent-emerald)" },
+                { label: "Demographic",         value: allDemographicResponses.length,  color: "var(--accent-violet)" },
+                { label: "Interaction Events", value: allLogs.length,                  color: "var(--accent-rose)" },
               ].map(stat => (
                 <div key={stat.label} className="glass-card" style={{ padding: "14px 16px", textAlign: "center" }}>
                   <div style={{ fontSize: "1.6rem", fontWeight: 800, color: stat.color, fontFamily: "var(--font-mono)" }}>{stat.value}</div>
@@ -650,9 +731,19 @@ export default function NexusAdminPage() {
                   ↺ Refresh
                 </button>
               </div>
-              <button className="btn btn-danger btn-sm" onClick={handleClearData} disabled={clearing || participants.length === 0}>
-                {clearing ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Clearing…</> : "🗑 Clear Session Data"}
-              </button>
+              <div className="flex items-center gap-2">
+                <input
+                  className="input"
+                  type="text"
+                  placeholder='Type DELETE to confirm'
+                  value={clearConfirmText}
+                  onChange={e => setClearConfirmText(e.target.value.toUpperCase())}
+                  style={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", width: 220, textTransform: "uppercase" }}
+                />
+                <button className="btn btn-danger btn-sm" onClick={handleClearData} disabled={clearing || participants.length === 0 || clearConfirmText !== 'DELETE'}>
+                  {clearing ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Clearing…</> : "🗑 Clear Session Data"}
+                </button>
+              </div>
             </div>
 
             {/* Model config summary – always visible so you know what's active */}
@@ -693,6 +784,7 @@ export default function NexusAdminPage() {
                   const sessions  = sessionsForParticipant(p.id);
                   const responses = responsesForParticipant(p.id);
                   const runs      = runsForParticipant(p.id);
+                  const demoResponses = demographicResponsesForParticipant(p.id);
                   const expanded  = expandedParticipant === p.id;
                   const totalEvents = allRunStats.filter(s => s.participant_id === p.id).reduce((acc,s) => acc + (s.total_events||0), 0);
 
@@ -708,6 +800,7 @@ export default function NexusAdminPage() {
                           <span style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>{sessions.length} session{sessions.length !== 1 ? "s" : ""}</span>
                           <span style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>{runs.length} run{runs.length !== 1 ? "s" : ""}</span>
                           <span style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>{responses.length} survey responses</span>
+                          <span style={{ fontSize: "0.78rem", color: "var(--accent-emerald)" }}>{demoResponses.length} demographic</span>
                           <span style={{ fontSize: "0.78rem", color: "var(--accent-rose)" }}>{totalEvents} events</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -720,6 +813,23 @@ export default function NexusAdminPage() {
                       {/* Expanded body */}
                       {expanded && (
                         <div style={{ borderTop: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.18)" }}>
+
+                          {/* ── Demographic responses ─────────────────────────── */}
+                          {demoResponses.length > 0 && (
+                            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Pre-Study Survey Responses</p>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
+                                {demoResponses.map(dr => (
+                                  <div key={dr.id} style={{ padding: "8px 12px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                                    <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", marginBottom: 2 }}>{dr.question_text}</div>
+                                    <div style={{ fontSize: "0.85rem", color: "var(--accent-teal)", fontWeight: 600 }}>
+                                      {dr.response_text || <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>no response</span>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {/* ── Per-run stats cards ───────────────────────────── */}
                           {runs.length > 0 && (
@@ -750,34 +860,35 @@ export default function NexusAdminPage() {
                                         </div>
                                       </div>
 
-                                      {/* Interaction stats mini-grid */}
+                                      {/* Run summary row */}
                                       {stat ? (
-                                        <div style={{ padding: "10px 14px" }}>
-                                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px", marginBottom: 10 }}>
-                                            {[
-                                              { label: "💬 Chat sent",     value: stat.chat_msgs_sent },
-                                              { label: "🤖 AI replies",    value: stat.chat_msgs_received },
-                                              { label: "💡 Hints",         value: stat.hints_requested },
-                                              { label: "▶ Code runs",     value: stat.code_runs },
-                                              { label: "🎯 AI actions",    value: stat.ai_actions },
-                                              { label: "✅ Accepted",      value: stat.suggestions_accepted },
-                                            ].map(item => (
-                                              <div key={item.label} className="flex items-center justify-between" style={{ fontSize: "0.75rem" }}>
-                                                <span style={{ color: "var(--text-muted)" }}>{item.label}</span>
-                                                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: item.value > 0 ? "var(--accent-teal)" : "var(--text-dim)" }}>{item.value}</span>
-                                              </div>
-                                            ))}
+                                        <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                          <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                                            {(() => {
+                                              const eventTypes: string[] = [];
+                                              if ((stat.chat_msgs_sent as number) > 0) eventTypes.push("chat");
+                                              if ((stat.hints_requested as number) > 0) eventTypes.push("hints");
+                                              if ((stat.code_runs as number) > 0) eventTypes.push("code runs");
+                                              if ((stat.ai_actions as number) > 0) eventTypes.push("AI actions");
+                                              if ((stat.suggestions_accepted as number) > 0 || (stat.suggestions_dismissed as number) > 0) eventTypes.push("suggestions");
+                                              if (eventTypes.length === 0) eventTypes.push("no events");
+                                              return eventTypes.map(et => (
+                                                <span key={et} style={{ fontSize: "0.7rem", padding: "2px 7px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", color: "var(--text-dim)", border: "1px solid var(--border-subtle)" }}>
+                                                  {et}
+                                                </span>
+                                              ));
+                                            })()}
                                           </div>
-                                          <div className="flex items-center justify-between" style={{ fontSize: "0.7rem", color: "var(--text-dim)", borderTop: "1px solid var(--border-subtle)", paddingTop: 6 }}>
-                                            <span>{stat.total_events} total events</span>
-                                            {duration !== null && <span>~{duration}s active</span>}
+                                          <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
+                                            <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>{stat.total_events} events</span>
+                                            {duration !== null && <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>~{duration}s</span>}
                                           </div>
                                         </div>
                                       ) : (
-                                        <div style={{ padding: "10px 14px", fontSize: "0.78rem", color: "var(--text-dim)" }}>No interaction data</div>
+                                        <div style={{ padding: "8px 14px", fontSize: "0.78rem", color: "var(--text-dim)" }}>No interaction data</div>
                                       )}
 
-                                      {/* Log timeline toggle */}
+                                      {/* Unique event types toggle */}
                                       {logs.length > 0 && (
                                         <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
                                           <button
@@ -785,27 +896,22 @@ export default function NexusAdminPage() {
                                             style={{ width: "100%", borderRadius: 0, fontSize: "0.72rem", color: "var(--text-dim)" }}
                                             onClick={() => setExpandedRun(runExpanded ? null : run.id)}
                                           >
-                                            {runExpanded ? "▲ Hide" : `▼ View ${logs.length} events`}
+                                            {runExpanded ? "▲ Hide event types" : `▼ ${logs.length} events — view types`}
                                           </button>
                                           {runExpanded && (
-                                            <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 14px 10px" }}>
-                                              {logs.map(log => {
-                                                let parsed: Record<string,unknown> = {};
-                                                try { parsed = JSON.parse(log.event_data); } catch {/* */}
-                                                return (
-                                                  <div key={log.id} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: "0.72rem", borderBottom: "1px solid var(--border-subtle)" }}>
-                                                    <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                                                      {formatIST(log.timestamp)}
+                                            <div style={{ padding: "6px 14px 10px", maxHeight: 160, overflowY: "auto" }}>
+                                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                                {[...new Set(logs.map(l => l.event_type))].sort().map(et => (
+                                                  <div key={et} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 8px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", gap: 8 }}>
+                                                    <span style={{ fontSize: "0.72rem", color: EVENT_COLOR[et] || "var(--text-secondary)" }}>
+                                                      {EVENT_ICON[et] || "·"} {et}
                                                     </span>
-                                                    <span style={{ color: EVENT_COLOR[log.event_type] || "var(--text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                                      {EVENT_ICON[log.event_type] || "·"} {log.event_type}
-                                                    </span>
-                                                    <span style={{ color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                      {Object.entries(parsed).filter(([k]) => k !== 'model_id').map(([k,v]) => `${k}:${v}`).join(' ')}
+                                                    <span style={{ fontSize: "0.7rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                                                      ×{logs.filter(l => l.event_type === et).length}
                                                     </span>
                                                   </div>
-                                                );
-                                              })}
+                                                ))}
+                                              </div>
                                             </div>
                                           )}
                                         </div>
@@ -817,52 +923,103 @@ export default function NexusAdminPage() {
                             </div>
                           )}
 
-                          {/* ── Sessions ─────────────────────────────────────── */}
-                          {sessions.length > 0 && (
-                            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
-                              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Sessions</p>
-                              {sessions.map(s => (
-                                <div key={s.id} style={{ fontSize: "0.8rem", padding: "6px 0", color: "var(--text-secondary)", borderBottom: "1px solid var(--border-subtle)" }}>
-                                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-dim)", marginRight: 12 }}>{s.id.slice(0, 8)}…</span>
-                                  <span className="badge badge-teal" style={{ marginRight: 6 }}>{s.task_type_a}</span>
-                                  <span className="badge badge-blue">{s.task_type_b}</span>
-                                  <span style={{ marginLeft: 12, color: "var(--text-dim)" }}>Order: {(() => { try { return JSON.parse(s.agent_order||'[]').map((a: string) => `${a} \u2192 ${resolveModelName(a)}`).join(' │ '); } catch { return s.agent_order; } })()}</span>
-                                  <span style={{ marginLeft: 12, color: "var(--text-dim)" }}>{formatIST(s.started_at)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          {/* ── Survey responses — per-run all 11 questions ─────── */}
+                          {runs.map(run => {
+                            const runResponses = responses.filter(r => r.run_id === run.id);
+                            const nasaResponses = runResponses.filter(r => r.scale_group === 'nasa_tlx');
+                            const aiResponses  = runResponses.filter(r => r.scale_group === 'ai_subjective');
+                            if (runResponses.length === 0) return null;
+                            const isOpen = expandedSurveyRuns.has(run.id);
+                            return (
+                              <div key={run.id} style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                                <button
+                                  className="flex items-center justify-between"
+                                  style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "4px 0", gap: 12 }}
+                                  onClick={() => {
+                                    setExpandedSurveyRuns(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(run.id)) next.delete(run.id);
+                                      else next.add(run.id);
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                      Run #{run.run_number}
+                                    </span>
+                                    <span className={`badge ${run.task_type === "coding" ? "badge-blue" : run.task_type === "puzzle" ? "badge-amber" : "badge-emerald"}`}>
+                                      {run.task_type === "coding" ? "💻" : run.task_type === "puzzle" ? "🧩" : "✍️"} {run.task_type}
+                                    </span>
+                                    <span style={{ fontSize: "0.7rem", color: "var(--accent-teal)", fontFamily: "var(--font-mono)" }}>{resolveModelName(run.model_id)}</span>
+                                    <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>{nasaResponses.length} NASA-TLX · {aiResponses.length} AI Sub</span>
+                                  </div>
+                                  <span style={{ color: "var(--text-dim)", fontSize: "0.75rem" }}>{isOpen ? "▲" : "▼"}</span>
+                                </button>
+                                {isOpen && (
+                                  <div style={{ marginTop: 10, background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", overflow: "hidden" }}>
+                                    {nasaResponses.length > 0 && (
+                                      <>
+                                        <div style={{ padding: "5px 12px", background: "rgba(0,0,0,0.15)", fontSize: "0.65rem", fontWeight: 700, color: "var(--accent-blue)", textTransform: "uppercase", letterSpacing: "0.06em" }}>NASA-TLX</div>
+                                        {nasaResponses.map(r => (
+                                          <div key={r.id} className="flex items-center justify-between" style={{ padding: "7px 12px", borderBottom: "1px solid var(--border-subtle)", gap: 12 }}>
+                                            <div style={{ flex: 1 }}>
+                                              <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginBottom: 1 }}>{r.sub_label}</div>
+                                              <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>{r.question_text}</div>
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                                              <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>{r.low_label}</span>
+                                              <span style={{ fontSize: "0.9rem", fontWeight: 800, color: "var(--accent-teal)", fontFamily: "var(--font-mono)", minWidth: 24, textAlign: "center" }}>{r.answer}</span>
+                                              <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>/ 7</span>
+                                              <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>{r.high_label}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </>
+                                    )}
+                                    {aiResponses.length > 0 && (
+                                      <>
+                                        <div style={{ padding: "5px 12px", background: "rgba(0,0,0,0.15)", fontSize: "0.65rem", fontWeight: 700, color: "var(--accent-emerald)", textTransform: "uppercase", letterSpacing: "0.06em" }}>AI Subjective</div>
+                                        {aiResponses.map(r => (
+                                          <div key={r.id} className="flex items-center justify-between" style={{ padding: "7px 12px", borderBottom: "1px solid var(--border-subtle)", gap: 12 }}>
+                                            <div style={{ flex: 1 }}>
+                                              <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginBottom: 1 }}>{r.sub_label}</div>
+                                              <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>{r.question_text}</div>
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                                              <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>{r.low_label}</span>
+                                              <span style={{ fontSize: "0.9rem", fontWeight: 800, color: "var(--accent-teal)", fontFamily: "var(--font-mono)", minWidth: 24, textAlign: "center" }}>{r.answer}</span>
+                                              <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>/ 7</span>
+                                              <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>{r.high_label}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
 
-                          {/* ── Survey responses table ───────────────────────── */}
-                          {responses.length > 0 && (
+                          {/* ── Post-Study Survey responses ────────────────────────── */}
+                          {allPostStudyResponses.length > 0 && (
                             <div style={{ padding: "14px 20px" }}>
-                              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Survey Responses</p>
-                              <div style={{ overflowX: "auto" }}>
-                                <table style={{ width: "100%", fontSize: "0.76rem", borderCollapse: "collapse" }}>
-                                  <thead>
-                                    <tr style={{ color: "var(--text-dim)" }}>
-                                      {["Run","Task","Model","Question","Group","Scale","Answer"].map(h => (
-                                        <th key={h} style={{ textAlign: "left", padding: "4px 8px", borderBottom: "1px solid var(--border-subtle)", fontWeight: 600 }}>{h}</th>
+                              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>🌐 Post-Study Survey Responses</p>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                {[...new Map(allPostStudyResponses.map(r => [r.question_id, r])).values()].map(r => {
+                                  const sessionDebrief = allPostStudyResponses.filter(d => d.question_id === r.question_id && d.participant_id === p.id);
+                                  return (
+                                    <div key={r.id} style={{ padding: "12px 16px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                                      <div style={{ fontSize: "0.72rem", color: "var(--accent-teal)", fontWeight: 600, marginBottom: 6 }}>Q{r.question_id}: {r.question_text}</div>
+                                      {sessionDebrief.map(d => (
+                                        <div key={d.id} style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 4 }}>
+                                          {d.response_text || <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>no response</span>}
+                                        </div>
                                       ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {responses.map(r => (
-                                      <tr key={r.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                                        <td style={{ padding: "3px 8px", fontFamily: "var(--font-mono)", color: "var(--text-dim)", fontSize: "0.68rem" }}>{r.run_id.slice(0,6)}…</td>
-                                        <td style={{ padding: "3px 8px" }}><span className={`badge ${r.task_type==="coding"?"badge-blue":r.task_type==="puzzle"?"badge-amber":"badge-emerald"}`}>{r.task_type}</span></td>
-                                        <td style={{ padding: "3px 8px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "0.68rem" }}>
-                                          <div>{r.model_id}</div>
-                                          <div style={{ color: "var(--accent-teal)" }}>{resolveModelName(r.model_id)}</div>
-                                        </td>
-                                        <td style={{ padding: "3px 8px", color: "var(--text-secondary)", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.question_text}</td>
-                                        <td style={{ padding: "3px 8px", color: "var(--text-dim)" }}>{GROUP_LABEL[r.scale_group]||r.scale_group}</td>
-                                        <td style={{ padding: "3px 8px", color: "var(--text-dim)" }}>{SCALE_LABEL[r.scale_type]||r.scale_type}</td>
-                                        <td style={{ padding: "3px 8px", fontWeight: 700, color: "var(--accent-teal)", fontFamily: "var(--font-mono)" }}>{r.answer}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -880,12 +1037,12 @@ export default function NexusAdminPage() {
           </>
         )}
 
-        {/* Global Survey Tab */}
+        {/* Post-Study Survey Tab */}
         {adminTab === 'global' && (
           <>
             <div className='glass-card' style={{ padding: '16px 20px', marginBottom: 20, borderLeft: '3px solid var(--accent-blue)' }}>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                <strong style={{ color: 'var(--accent-teal)' }}>Global Survey</strong> — open-ended questions shown to participants after all 4 runs and NASA-TLX surveys are complete.
+                <strong style={{ color: 'var(--accent-teal)' }}>Post-Study Survey</strong> — open-ended questions shown to participants after all 4 runs and NASA-TLX surveys are complete.
                 Use for comparative debrief and qualitative impressions. These are not per-task.
               </p>
             </div>
@@ -987,6 +1144,137 @@ export default function NexusAdminPage() {
                       </div>
                     </div>
                   ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Pre-Study Survey Tab */}
+        {adminTab === 'demographic' && (
+          <>
+            <div className='glass-card' style={{ padding: '16px 20px', marginBottom: 20, borderLeft: '3px solid var(--accent-emerald)' }}>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                <strong style={{ color: 'var(--accent-emerald)' }}>Pre-Study Survey</strong> — demographic and background questions shown to participants before the experiment begins.
+                Questions appear on the pre-study page immediately after the participant enters their ID.
+              </p>
+            </div>
+            <div className='flex items-center justify-between' style={{ marginBottom: 20 }}>
+              <h3 style={{ margin: 0 }}>
+                Questions
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 400, marginLeft: 8 }}>
+                  ({demographicQuestions.filter(q => q.active).length} active)
+                </span>
+              </h3>
+              <button className='btn btn-primary btn-sm' onClick={() => setShowDemographicForm(v => !v)}>
+                {showDemographicForm ? 'Cancel' : '+ Add Question'}
+              </button>
+            </div>
+
+            {showDemographicForm && (
+              <div className='glass-card fade-in' style={{ padding: 20, marginBottom: 20 }}>
+                <p style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
+                  New Pre-Study Question
+                </p>
+                <div className='flex flex-col gap-3'>
+                  <div>
+                    <label className='label'>Question Text *</label>
+                    <textarea className='input' rows={2}
+                      placeholder='e.g. What is your age?'
+                      value={demographicForm.question_text}
+                      onChange={e => setDemographicForm(f => ({ ...f, question_text: e.target.value }))}
+                      style={{ fontFamily: 'var(--font-sans)', fontSize: '0.88rem', lineHeight: 1.6 }}
+                    />
+                  </div>
+                  <div className='flex gap-3'>
+                    <div style={{ flex: 1 }}>
+                      <label className='label'>Answer Type</label>
+                      <select className='input' value={demographicForm.question_type}
+                        onChange={e => setDemographicForm(f => ({ ...f, question_type: e.target.value }))}>
+                        <option value='text'>Free text</option>
+                        <option value='number'>Number</option>
+                        <option value='select'>Multiple choice (options below)</option>
+                      </select>
+                    </div>
+                    <div style={{ width: 120 }}>
+                      <label className='label'>Display Order</label>
+                      <input className='input' type='number' min={1} max={99}
+                        value={demographicForm.display_order}
+                        onChange={e => setDemographicForm(f => ({ ...f, display_order: e.target.value }))} />
+                    </div>
+                  </div>
+                  {demographicForm.question_type === 'select' && (
+                    <div>
+                      <label className='label'>Options (one per line, or JSON array)</label>
+                      <textarea className='input' rows={3}
+                        placeholder='Woman&#10;Man&#10;Non-binary&#10;Prefer not to say'
+                        value={demographicForm.options}
+                        onChange={e => setDemographicForm(f => ({ ...f, options: e.target.value }))}
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                  )}
+                  <button className='btn btn-primary'
+                    onClick={handleCreateDemographicQ}
+                    disabled={!demographicForm.question_text.trim()}>
+                    Save Question
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {loadingDemographic ? (
+              <div style={{ textAlign: 'center', padding: 60 }}>
+                <span className='spinner' style={{ width: 28, height: 28, margin: '0 auto', display: 'block' }} />
+              </div>
+            ) : demographicQuestions.length === 0 ? (
+              <div className='glass-card' style={{ padding: 60, textAlign: 'center' }}>
+                <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📝</div>
+                <h3 style={{ color: 'var(--text-secondary)' }}>No questions yet</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Add demographic questions shown before the experiment begins.
+                </p>
+              </div>
+            ) : (
+              <div className='flex flex-col gap-3'>
+                {[...demographicQuestions]
+                  .sort((a, b) => a.display_order - b.display_order)
+                  .map((q) => {
+                    let options: string[] = [];
+                    try { options = JSON.parse(q.options); } catch { /* */ }
+                    return (
+                      <div key={q.id} className='glass-card' style={{ padding: '16px 20px', opacity: q.active ? 1 : 0.55 }}>
+                        <div className='flex items-center justify-between'>
+                          <div className='flex items-center gap-3' style={{ flex: 1, minWidth: 0 }}>
+                            <span className={'badge ' + (
+                              q.question_type === 'text' ? 'badge-blue' :
+                              q.question_type === 'number' ? 'badge-amber' : 'badge-teal'
+                            )} style={{ flexShrink: 0 }}>
+                              {q.question_type === 'text' ? 'text' : q.question_type === 'number' ? 'number' : 'choice'}
+                            </span>
+                            <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                              {q.question_text}
+                            </span>
+                            {options.length > 0 && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                                [{options.join(', ')}]
+                              </span>
+                            )}
+                          </div>
+                          <div className='flex items-center gap-2' style={{ flexShrink: 0, marginLeft: 16 }}>
+                            <button
+                              className={'btn btn-sm ' + (q.active ? 'btn-secondary' : 'btn-ghost')}
+                              style={{ fontSize: '0.7rem' }}
+                              onClick={() => handleToggleDemographicQ(q)}>
+                              {q.active ? 'Active' : 'Inactive'}
+                            </button>
+                            <button className='btn btn-danger btn-sm' onClick={() => handleDeleteDemographicQ(q.id)}>
+                              X
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </>

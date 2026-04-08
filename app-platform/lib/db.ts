@@ -78,9 +78,22 @@ export function getSurveysDb(): Database.Database {
     _surveysDb.pragma('journal_mode = WAL');
     _surveysDb.pragma('foreign_keys = ON');
     initSurveysDb(_surveysDb);
+    migrateScaleTypes(_surveysDb);
     seedBuiltInTlxQuestions(_surveysDb);
+    seedDefaultDemographicQuestions(_surveysDb);
   }
   return _surveysDb;
+}
+
+function migrateScaleTypes(db: Database.Database) {
+  // One-time migration: reduce NASA-TLX from 21-point to 7-point scale
+  // Only updates rows that still have the old 21-point value
+  try {
+    const changes = db.prepare("UPDATE tlx_questions SET scale_type = 'likert7' WHERE scale_type = 'likert21'").run();
+    if (changes.changes > 0) {
+      console.log(`[DB] Migrated ${changes.changes} NASA-TLX questions from 21-point to 7-point scale`);
+    }
+  } catch { /* ignore if column doesn't exist or other error */ }
 }
 
 function initSurveysDb(db: Database.Database) {
@@ -130,7 +143,7 @@ function initSurveysDb(db: Database.Database) {
       sub_label TEXT NOT NULL DEFAULT '',
       low_label TEXT NOT NULL DEFAULT 'Low',
       high_label TEXT NOT NULL DEFAULT 'High',
-      scale_type TEXT NOT NULL DEFAULT 'likert7' CHECK(scale_type IN ('likert5','likert7','likert21')),
+      scale_type TEXT NOT NULL DEFAULT 'likert7' CHECK(scale_type IN ('likert5','likert7')),
       scale_group TEXT NOT NULL DEFAULT 'custom' CHECK(scale_group IN ('nasa_tlx','ai_subjective','custom')),
       display_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
@@ -175,6 +188,29 @@ function initSurveysDb(db: Database.Database) {
       FOREIGN KEY (session_id) REFERENCES sessions(id),
       FOREIGN KEY (participant_id) REFERENCES participants(id)
     );
+
+    -- Pre-study demographic questions
+    CREATE TABLE IF NOT EXISTS demographic_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      question_text TEXT NOT NULL,
+      question_type TEXT NOT NULL DEFAULT 'text' CHECK(question_type IN ('text','select','number')),
+      options TEXT NOT NULL DEFAULT '[]',
+      display_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Pre-study demographic responses
+    CREATE TABLE IF NOT EXISTS demographic_responses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      participant_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      question_id INTEGER NOT NULL,
+      response_text TEXT NOT NULL DEFAULT '',
+      submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (question_id) REFERENCES demographic_questions(id),
+      FOREIGN KEY (participant_id) REFERENCES participants(id)
+    );
   `);
 }
 
@@ -190,7 +226,7 @@ function seedBuiltInTlxQuestions(db: Database.Database) {
   `);
 
   const seed = db.transaction(() => {
-    // ── Standard NASA-TLX (6 dimensions, 1-21 scale, all tasks) ──
+    // ── Standard NASA-TLX (6 dimensions, 1-7 scale, all tasks) ──
     const nasaTlx = [
       [1, 'Mental Demand',   'How mentally demanding was the task?',                                   'Low',     'High'],
       [2, 'Physical Demand', 'How physically demanding was the task?',                                 'Low',     'High'],
@@ -200,7 +236,7 @@ function seedBuiltInTlxQuestions(db: Database.Database) {
       [6, 'Frustration',     'How insecure, discouraged, irritated, stressed, or annoyed were you?', 'Low',     'High'],
     ];
     for (const [order, label, sub, low, high] of nasaTlx) {
-      insert.run('all', label, sub, low, high, 'likert21', 'nasa_tlx', order);
+      insert.run('all', label, sub, low, high, 'likert7', 'nasa_tlx', order);
     }
 
     // ── AI-Interaction subjective scales (5 dimensions, 1-7 scale, all tasks) ──
@@ -217,4 +253,16 @@ function seedBuiltInTlxQuestions(db: Database.Database) {
   });
 
   seed();
+}
+
+// ─── Seed default demographic questions ───────────────────────
+function seedDefaultDemographicQuestions(db: Database.Database) {
+  const count = (db.prepare('SELECT COUNT(*) as c FROM demographic_questions').get() as { c: number }).c;
+  if (count > 0) return;
+  const insert = db.prepare(`
+    INSERT INTO demographic_questions (question_text, question_type, options, display_order)
+    VALUES (?, ?, ?, ?)
+  `);
+  insert.run("What is your age?", "number", "[]", 1);
+  insert.run("What is your gender?", "select", '["Woman","Man","Non-binary","Prefer not to say","Other"]', 2);
 }

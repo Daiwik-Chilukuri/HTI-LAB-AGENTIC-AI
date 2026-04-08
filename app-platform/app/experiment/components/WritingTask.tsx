@@ -7,13 +7,14 @@ import { useTaskHeartbeat } from "@/lib/useTaskHeartbeat";
 
 interface WritingTaskProps {
   runId: string; modelId: string; participantId: string; sessionId: string; taskId?: number;
+  onTaskComplete?: () => void;
 }
 interface WritingPrompt {
   id: number; title: string; prompt: string; genre: string;
   word_count_target: number; evaluation_criteria: string; difficulty: string;
 }
 
-export default function WritingTask({ runId, modelId, participantId, sessionId, taskId = 0 }: WritingTaskProps) {
+export default function WritingTask({ runId, modelId, participantId, sessionId, taskId = 0, onTaskComplete }: WritingTaskProps) {
   const [task, setTask]             = useState<WritingPrompt | null>(null);
   const [loading, setLoading]       = useState(true);
   const [text, setText]             = useState("");
@@ -21,10 +22,36 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
   const [aiSuggestion, setAiSuggestion] = useState("");
   const [loadingAction, setLoadingAction] = useState("");
   const [submitted, setSubmitted]   = useState(false);
+  const [chatWidth, setChatWidth]   = useState(360);
+  const [isDragging, setIsDragging] = useState(false);
   const startTimeRef    = useRef<number>(Date.now());
   const acceptCountRef  = useRef(0);
   const actionCountRef  = useRef(0);
   const lastSuggestion  = useRef("");
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(360);
+
+  // Drag-to-resize for the chat panel
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = chatWidth;
+  }, [chatWidth]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - dragStartX.current;
+      setChatWidth(Math.min(600, Math.max(200, dragStartWidth.current - delta)));
+    };
+    const onMouseUp = () => setIsDragging(false);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isDragging]);
 
   // 30-second engagement heartbeat
   useTaskHeartbeat({ runId, participantId });
@@ -57,6 +84,7 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
     if (!task) return;
     setLoadingAction(action);
     setAiSuggestion("");
+    actionCountRef.current += 1;
 
     logEvent({ run_id: runId, participant_id: participantId, event_type: "ai_action_clicked",
       event_data: { action, model_id: modelId, word_count: wordCount, has_selection: selection.length > 0 } });
@@ -125,6 +153,7 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
                     word_count: wordCount, word_count_target: task.word_count_target,
                     edit_distance_pct: editDist, suggestion_accept_rate_pct: acceptRate,
                     total_actions: actionCountRef.current, total_accepts: acceptCountRef.current } });
+    onTaskComplete?.();
   };
 
   if (loading) return (
@@ -144,8 +173,8 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", height: "100%", gap: 1 }}>
-      <div style={{ display: "flex", flexDirection: "column", padding: 24, overflowY: "auto" }}>
+    <div style={{ display: "flex", height: "100%" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24, overflowY: "auto", minWidth: 0 }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
           <span className="badge badge-emerald">Content Creation</span>
           <span className="badge badge-blue">{task.genre}</span>
@@ -197,29 +226,37 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
           <div className="fade-in" style={{ marginTop: 16, padding: 16, background: "rgba(45, 212, 191, 0.06)", border: "1px solid rgba(45, 212, 191, 0.15)", borderRadius: "var(--radius-md)" }}>
             <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
               <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--accent-teal)" }}>AI Suggestion</span>
-              <div className="flex gap-1">
-                <button className="btn btn-primary btn-sm" onClick={handleAccept}>Accept</button>
-                <button className="btn btn-ghost btn-sm" onClick={handleDismiss}>Dismiss</button>
-              </div>
+              {["continue", "rewrite", "summarize"].includes(loadingAction) && (
+                <div className="flex gap-1">
+                  <button className="btn btn-primary btn-sm" onClick={handleAccept}>Accept</button>
+                  <button className="btn btn-ghost btn-sm" onClick={handleDismiss}>Dismiss</button>
+                </div>
+              )}
             </div>
             <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{aiSuggestion}</p>
           </div>
         )}
       </div>
 
-      <div style={{ borderLeft: "1px solid var(--border-subtle)" }}>
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        style={{
+          width: 4, cursor: isDragging ? 'col-resize' : 'ew-resize',
+          background: isDragging ? 'var(--accent-blue)' : 'var(--border-subtle)',
+          transition: 'background 0.15s', flexShrink: 0,
+        }}
+      />
+
+      {/* Right – AI Chat */}
+      <div style={{ width: chatWidth, flexShrink: 0, borderLeft: "1px solid var(--border-subtle)", overflow: 'hidden' }}>
         <AIChatPanel modelId={modelId} runId={runId} participantId={participantId}
           systemPrompt={[
             `You are a writing assistant for a research study. The participant is working on the following writing task:`,
             `Genre: ${task.genre} | Target: ~${task.word_count_target} words`,
             `Task brief: "${task.prompt}"`,
             ``,
-            `YOUR ROLE IS TO ASSIST, NOT TO WRITE FOR THEM. Follow these rules strictly:`,
-            `1. WAIT FOR A SPECIFIC QUESTION. If the user sends a vague message ("hello", "hi", "start", "help") do NOT produce any writing. Instead, ask them what specific aspect they want help with (e.g. brainstorming ideas, improving a sentence, structure, tone).`,
-            `2. NEVER write the full piece or a complete draft unprompted.`,
-            `3. NEVER write more than 2-3 sentences of sample text unless the user explicitly says "write" or "give me an example".`,
-            `4. Focus on: asking clarifying questions, giving structural suggestions, explaining tone/genre conventions, reviewing what they've written.`,
-            `5. If the user asks you to write the whole thing, politely decline and offer to help them write it themselves instead.`,
+            `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may brainstorm, review their draft, suggest changes, rewrite sections, or write full examples — respond however best addresses what they're asking.`,
           ].join('\n')}
           contextInfo={`Current draft (${wordCount} words):\n${text || "(empty — participant has not started writing yet)"}`}
         />

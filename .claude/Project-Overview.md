@@ -7,16 +7,26 @@
 
 ## 1. Research Context & Goal
 
-This platform is a **Human-Technology Interaction (HTI) research tool** built to run a controlled within-subject experiment comparing how different state-of-the-art AI language models affect human productivity, cognitive load, and subjective experience across three distinct task types.
+This platform is a **Human-Technology Interaction (HTI) research tool** built to run a controlled within-subject experiment measuring **how different state-of-the-art AI language models change human behavior** — specifically reliance on AI, content ownership, and susceptibility to automation bias — across three distinct task types.
 
-**Core research question:**  
-*Does the choice of AI assistant model significantly affect human performance and perceived workload across coding, logical reasoning, and content creation tasks?*
+**Core research question:**
+*Does the choice of AI assistant model significantly affect how quickly users reach for AI help, how much AI-authored content survives in their final answers, and whether they blindly follow obviously wrong AI suggestions?*
+
+**Primary outcomes (updated April 2026):**
+1. **Reliance Index** — how early and how often users lean on AI assistance (**comparing 3 non‑faulty LLMs**)
+2. **Content Persistence / Ownership** — share of AI-authored content in final answers (**comparing 3 non‑faulty LLMs**)
+3. **Automation Bias** — whether users follow seeded wrong AI hints (participant‑level, from Faulty‑AI probe run; **not model‑comparative**)
+
+**Faulty‑AI exclusion:** One run per session injects a known‑wrong AI suggestion. For Reliance and Persistence, analysis is across the **3 non‑faulty LLMs only**. The faulty run's data feeds only the Automation‑Bias label.
+
+Performance metrics (accuracy, time, pass@k) are logged as **controls**, not primary outcomes.
 
 **Study design:**
 - **Within-subject:** Every participant experiences all 4 AI models
 - **Blind benchmark:** Participants are never told which model they are using
 - **2 task types per session:** Each session covers 2 of the 3 task families (counterbalanced)
 - **4 runs per session:** 2 runs per task type, one per agent, 15 minutes each
+- **Faulty‑AI probe run:** One run per session injects a known-wrong AI suggestion to measure automation bias
 - **Post-run survey:** NASA-TLX + AI subjective scales after each run
 - **End-of-session global survey:** Open-ended debrief questions after all 4 runs
 
@@ -40,9 +50,10 @@ This platform is a **Human-Technology Interaction (HTI) research tool** built to
 
 ```
 HTI-Lab-AgenticAI/
-├── docs/
+├── .claude/                        ← Docs moved here — auto-read on session start
 │   ├── Experimental-Protocol.md     ← Full experimental design (source of truth)
-│   └── Project-Overview.md          ← This file
+│   ├── Project-Overview.md          ← Technical index and design rationale
+│   └── CLAUDE.md                    ← AI assistance context
 │
 └── app-platform/                    ← Next.js application root
     ├── app/
@@ -117,7 +128,7 @@ HTI-Lab-AgenticAI/
 | explanation | TEXT | Full explanation for post-reveal |
 | hints | TEXT | JSON array of incremental hint strings |
 | ai_solution_correct / ai_reasoning_correct | TEXT | What the AI should say when asked for the correct path |
-| ai_solution_faulty / ai_reasoning_faulty | TEXT | Kept in schema for future use (NOT used in current study) |
+| ai_solution_faulty / ai_reasoning_faulty | TEXT | Pre-seeded wrong suggestion for automation-bias probe run (NOW ACTIVE) |
 | difficulty | TEXT | CHECK constraint |
 
 **`writing_tasks`**
@@ -246,42 +257,44 @@ At session creation time (`POST /api/sessions`):
 
 ### Complete Event Inventory
 
+**Global (All Tasks)**
+| Event | Key Fields | Purpose |
+|---|---|---|
+| `task_start` | `task_id`, `task_type`, `model_id`, `task_title` | Establishes the baseline start time and registers condition. |
+| `alive_ping` | `ping_n`, `elapsed_sec`, `tab_active`, `recently_active`, `active_sec_est` | Differentiates true active engagement time from raw elapsed time. |
+| `ai_chat_sent` | `char_count`, `model_id` | Tracks participant reliance on the standard AI side-chat and query complexity. |
+| `ai_chat_received` | `char_count`, `model_id` | Tracks the length/complexity of the AI's responses. |
+| `window_blur` / `focus` | `elapsed_sec_away` | **Trust/Credibility:** Frequency of leaving the experiment tab to verify answers elsewhere. |
+| `ai_suggestion_copied` | `char_count`, `time_since_generation` | **Reliance/Trust:** Dwell time before copying AI outputs (fast copy = high reliance). |
+
 **Coding Task**
 | Event | Key Fields | Purpose |
 |---|---|---|
-| `task_start` | task_id, task_title, model_id | Anchor point for time calculations |
-| `code_edit` | edit_count, char_count (debounced 5s) | Interaction density |
-| `code_run` | char_count, elapsed_sec, is_submit | Total execution attempts |
-| `code_run_result` | tests_passed/failed/total, pass_at_1, code_persistence_pct, ai_line_count | Core pass@k metric; code authorship |
-| `first_success` | time_to_first_success_sec + code metrics | RealHumanEval-aligned metric |
-| `task_complete` | time_to_complete_sec, final_pass_at_1, code metrics | Final record |
-| `alive_ping` | ping_n, elapsed_sec, tab_active, recently_active | Engagement time |
+| `code_edit` | `edit_count`, `char_count` | Provides a proxy for coding effort (debounced). |
+| `code_run` | `char_count`, `model_id`, `elapsed_sec`, `is_submit` | Captures execution attempts and time. (Tracks **Automation Bias** if `is_submit` is used without testing). |
+| `code_run_result` | `tests_passed`, `tests_failed`, `pass_at_1`, `ai_line_count`, `code_persistence_pct` | `code_persistence_pct` tracks uniqueness vs. starter code. Proxy for **Trust**. |
+| `first_success` | `time_to_first_success_sec`, `ai_line_count`, `code_persistence_pct` | Exact moment of problem solution. |
+| `task_complete` | `time_to_complete_sec`, `final_pass_at_1`, `tests_passed`, `code_persistence_pct` | Summarizes the entire coding session. |
 
 **Puzzle Task**
 | Event | Key Fields | Purpose |
 |---|---|---|
-| `task_start` | task_id, task_title, model_id | |
-| `hint_requested` | hint_number, model_id | AI reliance metric |
-| `hint_received` | hint_number, char_count | Delivery confirmation |
-| `answer_edited_post_hint` | hints_used, answer_length | Whether participant acted on AI guidance |
-| `answer_submitted` | is_correct, hints_used, time_to_complete_sec | Correctness + timing |
-| `task_complete` | is_correct, hints_used, time_to_complete_sec | Final record |
-| `alive_ping` | | Engagement |
+| `hint_requested` | `hint_number`, `model_id` | Tracks moments of frustration requiring AI assistance. |
+| `hint_received` | `hint_number`, `model_id`, `char_count` | AI hint delivery confirmation. |
+| `answer_edited_post_hint` | `hints_used`, `answer_length`, `model_id` | Validates whether AI triggered a change in approach. |
+| `answer_submitted` | `is_correct`, `hints_used`, `overrides`, `time_to_complete_sec`, `answer_length`, `model_id` | `overrides` serves as a metric for **Calibrated Trust**. |
+| `task_complete` | `time_to_complete_sec`, `hints_used`, `is_correct`, `overrides` | Final record of puzzle performance. |
 
 **Writing Task**
 | Event | Key Fields | Purpose |
 |---|---|---|
-| `task_start` | task_id, task_title, genre, model_id | |
-| `ai_action_clicked` | action (continue/rewrite/summarize/outline/improve), word_count | Action preference pattern |
-| `suggestion_accepted` | suggestion_char_count, accept_count | Acceptance rate |
-| `suggestion_dismissed` | action_count | Dismissal rate |
-| `task_complete` | time_to_complete_sec, word_count, word_count_target, edit_distance_pct, suggestion_accept_rate_pct | Core metrics |
-| `alive_ping` | | Engagement |
+| `ai_action_clicked` | `action` (e.g., summarize, rewrite), `word_count`, `has_selection` | Identifies which AI features users rely on most. |
+| `suggestion_accepted` | `suggestion_char_count`, `accept_count` | Affirmative alignment between AI outputs and user preference (Reliance). |
+| `suggestion_dismissed` | `action_count` | Tracks AI outputs user found unhelpful. |
+| `task_complete` | `time_to_complete_sec`, `word_count`, `edit_distance_pct`, `suggestion_accept_rate_pct` | `edit_distance_pct` directly proxies **Code/Text Persistence / Trust**. |
 
 ### Deliberately Excluded Logs
-- **`answer_override`** — LOA (Level of Autonomy) concept imported from a senior project studying autonomous AI control. Not applicable here; we replaced with neutral `answer_edited_post_hint`
-- **Faulty hint detection / awareness quiz** — Specific to the senior project's LOA study (they injected deliberately wrong AI answers to test calibrated trust). Our benchmark uses real model outputs only
-- **`ai_solution_faulty` / `ai_reasoning_faulty` DB fields** — Retained in schema for future extensibility but not populated or used in any prompt
+- **`answer_override`** — LOA (Level of Autonomy) concept from prior autonomous AI control studies. Not applicable here; replaced with neutral `answer_edited_post_hint`
 
 ---
 
@@ -407,9 +420,9 @@ npm run dev
 
 | Item | Status | Notes |
 |---|---|---|
-| Python code execution | Placeholder (simulated) | Wire up Pyodide (browser WASM) or a sandboxed backend for real pass@k |
+| Python code execution | ✅ Full (April 2026) | `POST /api/execute` calls OneCompiler API. Unit tests appended to code; stdout parsed for PASS/FAIL/ERROR. Requires `ONECOMPILER_API_KEY` in `.env.local`. Free tier ~100 runs/day. |
 | Global survey participant UI | Not built | Currently admin-managed only; needs a `/debrief?session=...` page |
-| Faulty AI condition | Schema ready, not used | Could activate for a LOA sub-study fork |
+| Faulty AI condition | **NOW ACTIVE (April 2026)** | One run per session is a probe; `ai_solution_faulty` / `ai_reasoning_faulty` fields are populated |
 | Mobile responsiveness | Not optimised | Designed for 1080p+ desktop (experiment hardware assumption) |
 | Counterbalancing Latin square | Partial | Current: random difficulty per session. Full Latin square would pre-specify difficulty sequences across all participants |
 | Email/notification when session created | Not implemented | Not needed for localhost |

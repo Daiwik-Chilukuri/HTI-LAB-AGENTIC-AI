@@ -50,6 +50,7 @@ export default function ExperimentPage() {
   const [phase, setPhase] = useState<Phase>("intro");
   const [timeLeft, setTimeLeft] = useState(RUN_TIME_SECONDS);
   const [timerActive, setTimerActive] = useState(false);
+  const [taskSubmitted, setTaskSubmitted] = useState(false);
 
   // Global survey state
   const [globalQuestions, setGlobalQuestions] = useState<GlobalQuestion[]>([]);
@@ -88,6 +89,7 @@ export default function ExperimentPage() {
     setPhase("task");
     setTimeLeft(RUN_TIME_SECONDS);
     setTimerActive(true);
+    setTaskSubmitted(false);
   }, []);
 
   const handleTaskComplete = useCallback(() => {
@@ -255,8 +257,10 @@ export default function ExperimentPage() {
             id="submit-task-btn"
             className="btn btn-primary btn-sm"
             onClick={handleTaskComplete}
+            disabled={!taskSubmitted}
+            title={!taskSubmitted ? "Submit your work first to continue" : ""}
           >
-            Submit & Continue →
+            Next Task →
           </button>
         </div>
 
@@ -269,6 +273,7 @@ export default function ExperimentPage() {
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
           {run.task_type === "puzzle" && (
@@ -278,6 +283,7 @@ export default function ExperimentPage() {
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
           {run.task_type === "writing" && (
@@ -287,6 +293,7 @@ export default function ExperimentPage() {
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
         </div>
