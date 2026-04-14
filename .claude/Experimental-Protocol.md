@@ -249,23 +249,19 @@ This is **not used to compare models** (the faulty content is ours, not the LLM'
 
 ---
 
-## 7. Practical Next Steps
+## 7. Implementation Status (April 2026)
 
-1. **Populate Faulty‑AI fields in task DB**
-   - Add `ai_solution_faulty` / `ai_reasoning_faulty` content for puzzle tasks.
-   - Mark which run is the probe per session.
+All core features are **fully implemented**:
 
-2. **Update logging to capture Reliance and Persistence events**
-   - Verify `code_persistence_pct`, `edit_distance_pct`, and `overrides` are logged correctly.
-   - Ensure `ai_solution_faulty` delivery is triggered correctly in probe runs.
+- ✅ **Faulty‑AI probe** — implemented via standalone system prompts in all 3 task types (CodingTask, PuzzleTask, WritingTask). Random 1-of-3 run selection at session creation. `is_faulty` column on `runs` table.
+- ✅ **Reliance & Persistence logging** — `code_persistence_pct`, `edit_distance_pct`, `overrides`, `hint_requested`, `ai_action_clicked`, `suggestion_accepted` all active.
+- ✅ **Test/Live mode toggle** — admin panel `/htilab-nexus` routes all agents to Nemotron when test mode is on.
+- ✅ **Pre‑survey mandatory fields** — age/gender validation before experiment start.
+- ✅ **Reasoning disabled** — `enable_reasoning: false` on all `/api/chat` calls prevents chain-of-thought display.
 
-3. **Pilot with 3–5 internal participants**
-   - Run end‑to‑end sessions with full logging to validate Reliance/Persistence metrics.
-   - Test faulty‑AI injection and automation‑bias detection.
-
-4. **Finalize counterbalancing and sample size**
-   - Ensure faulty‑AI run position is fully counterbalanced.
-   - Use pilot results to refine the analysis plan.
+**Remaining:**
+- Pilot testing with participants to validate the full session flow
+- Finalize counterbalancing and sample size based on pilot results
 
 ---
 

@@ -2,25 +2,26 @@
 
 A comprehensive Human-Technology Interaction (HTI) research platform built to run a controlled, within-subject experiment measuring **how different state-of-the-art AI language models change human behavior** — focusing on reliance on AI, content ownership, and susceptibility to automation bias.
 
-This project enables **blind benchmarking** of 4 different LLMs across 3 distinct task families: Coding, Logic Puzzles, and Content Creation (Writing).
+This project enables **blind benchmarking** of 3 different LLMs across 3 distinct task families: Coding, Logic Puzzles, and Creative Writing.
 
-## ✨ Key Features
+## Key Features
 
-- **Blind Benchmarking:** Participants interact with 4 different models (e.g., GPT-5.4, Claude Sonnet 4.6, Gemini 3.1 Pro, Grok 4.20) without knowing which one they are using ("Agent A, B, C, or D"). An identity guard strictly prevents the models from revealing their true names.
+- **Blind Benchmarking:** Participants interact with 3 different models (GPT-5.4, Claude Sonnet 4.6, Gemini 3.1 Pro) without knowing which one they are using ("Agent A, B, or C"). An identity guard strictly prevents the models from revealing their true names.
 - **Task Counterbalancing:** Pre-assigned, matched-difficulty questions ensure fairness and validity across the experiment runs without confounding agent performance with task difficulty.
 - **Three Primary Behavioral Outcomes:**
-  - 💻 **Reliance Index:** How quickly and how often users reach for AI help instead of trying themselves.
-  - 📝 **Content Persistence:** How much of the AI's output survives in the final answer.
-  - ⚠️ **Automation Bias:** Whether users follow obviously wrong AI hints when they shouldn't (via seeded Faulty‑AI probe run).
+  - **Reliance Index:** How quickly and how often users reach for AI help instead of trying themselves.
+  - **Content Persistence:** How much of the AI's output survives in the final answer.
+  - **Automation Bias:** Whether users follow obviously wrong AI hints when they shouldn't (via seeded Faulty-AI probe run).
 - **Three Core Task Types:**
-  - 💻 **Coding:** A Monaco-editor-powered Python IDE with task prompts and a conversational AI guide.
-  - 🧩 **Logic Puzzles:** A UI that tracks hint requests and reasoning logic against strict logic problems.
-  - ✍️ **Writing:** A rich text editor for drafting emails, blogs, or essays with intelligent structuring guidance.
+  - **Coding:** A Monaco-editor-powered Python IDE with task prompts and a conversational AI guide.
+  - **Logic Puzzles:** A UI that tracks hint requests and reasoning logic against strict logic problems.
+  - **Writing:** A rich text editor for drafting emails, blogs, or essays with intelligent structuring guidance.
 - **Comprehensive Logging:** An asynchronous, completely unobtrusive logging system measuring engagement time (via a 30-second heartbeat hook), interactions, hint reliance, and task success.
 - **Integrated Survey Tools:** Implements post-run NASA-TLX cognitive load index, subjective AI trust scales, and end-of-session global qualitative surveys.
-- **Hidden Admin Dashboard:** A fully built-in `/htilab-nexus` admin panel for managing task questions, survey items, exporting raw experimental data (CSV), and viewing interaction timelines.
+- **Mandatory Pre-Survey:** Age and gender questions must be completed before the experiment begins.
+- **Hidden Admin Dashboard:** A fully built-in `/htilab-nexus` admin panel for managing tasks, survey items, exporting raw experimental data (CSV), and toggling **Test/Live mode** (routes all agents to Nemotron for local testing).
 
-## 🛠 Tech Stack
+## Tech Stack
 
 - **Framework:** Next.js 14 (App Router)
 - **Language:** TypeScript
@@ -28,7 +29,7 @@ This project enables **blind benchmarking** of 4 different LLMs across 3 distinc
 - **Styling:** Premium dark glassmorphism Vanilla CSS design system.
 - **AI Gateway:** OpenRouter Unified API.
 
-## 🚀 Quick Setup
+## Quick Setup
 
 1. **Install dependencies:**
    ```bash
@@ -37,15 +38,14 @@ This project enables **blind benchmarking** of 4 different LLMs across 3 distinc
    ```
 
 2. **Setup environment variables:**
-   Duplicate the example environment file and add your OpenRouter key:
    ```bash
    cp .env.local.example .env.local
-   # Inside .env.local, fill in:
-   # OPENROUTER_API_KEY=your-api-key-here
+   # Inside .env.local, fill in both keys:
+   # OPENROUTER_API_KEY=...         # Real models (GPT, Claude, Gemini)
+   # OPENROUTER_API_KEY_TEST=...     # Nemotron for test mode (free tier)
    ```
 
 3. **Seed Database:**
-   Initialize the database with the pre-vetted task pool and survey configurations (2 easy, 2 medium, 2 hard questions per task type):
    ```bash
    node seed-full-tasks.mjs
    ```
@@ -57,10 +57,11 @@ This project enables **blind benchmarking** of 4 different LLMs across 3 distinc
 
 Access the participant UI at `http://localhost:3000` and the hidden admin console at `http://localhost:3000/htilab-nexus`.
 
-## 📖 Documentation
+## Documentation
 
 For full architectural transparency, rationale on engineering decisions, comprehensive database schemas, log event dictionaries, and the full experimental protocol, please refer to the `.claude/` folder (auto-read on session start):
 
-- [`.claude/Project-Overview.md`](.claude/Project-Overview.md) - The core technical index of our decisions.
-- [`.claude/Experimental-Protocol.md`](.claude/Experimental-Protocol.md) - The research design, research questions, constraints, and metrics.
-- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) - AI assistance context and important constraints.
+- [`.claude/Project-Overview.md`](.claude/Project-Overview.md) — Technical index and design rationale
+- [`.claude/Experimental-Protocol.md`](.claude/Experimental-Protocol.md) — Research design, research questions, constraints, and metrics
+- [`.claude/faulty-ai.md`](.claude/faulty-ai.md) — Faulty-AI probe implementation (fully implemented April 2026)
+- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) — AI assistance context and important constraints

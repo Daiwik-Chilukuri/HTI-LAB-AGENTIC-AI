@@ -1,6 +1,6 @@
 # Logging Reference — HTI-Lab AgenticAI
 
-> This is a redundant reference for quick access. The authoritative source is `.claude/Project-Overview.md` §9.
+> This is a redundant reference for quick access. The authoritative source is `.claude/Project-Overview.md` §10.
 
 ---
 
@@ -61,17 +61,17 @@
 
 ---
 
-## Faulty-AI Probe ⚠️ Pending
+## Faulty-AI Probe ✅ Active (April 2026)
 
-> One probe run per session injects pre-seeded wrong AI content to measure **Automation Bias**.
 > Full spec: [`.claude/faulty-ai.md`](.claude/faulty-ai.md)
 
-| Event | Key Fields | Status | Purpose |
-|---|---|---|---|
-| `ai_solution_faulty_delivered` | `char_count`, `faulty_field`, `model_id` | ⚠️ Pending | Pre-seeded wrong solution returned to participant (probe run) |
-| `ai_reasoning_faulty_delivered` | `char_count`, `faulty_field`, `model_id` | ⚠️ Pending | Pre-seeded wrong reasoning returned to participant (probe run) |
+The faulty AI is implemented via **standalone system prompts** (not pre-seeded DB content). The model itself produces wrong answers that are subtly incorrect, confidently presented, and defended when questioned.
 
-**Scope:** Coding (via chat), Puzzle (via hints), Writing (via action buttons). DB support partially exists in `puzzle_tasks`; `coding_tasks` and `writing_tasks` need schema additions. See `.claude/faulty-ai.md` for full plan.
+**Behavioral outcome:** Automation Bias Flag
+- 1 = participant followed the faulty AI's wrong suggestion (submitted without override)
+- 0 = participant rejected or corrected the faulty suggestion
+
+The faulty run is **excluded** from Reliance Index and Content Persistence comparisons (those metrics compare the 3 non-faulty LLMs only).
 
 ---
 
@@ -79,8 +79,8 @@
 
 | Event | Reason | Status |
 |---|---|---|
-| `window_blur` / `focus` | Experiment runs fullscreen on a single controlled tab — tab switch not possible in local lab setup | ❌ Excluded |
-| `answer_override` | LOA (Level of Autonomy) concept from prior autonomous AI studies; replaced with neutral `answer_edited_post_hint` | ❌ Excluded |
+| `window_blur` / `focus` | Experiment runs fullscreen on a single controlled tab | ❌ Excluded |
+| `answer_override` | LOA concept from prior autonomous AI studies; replaced with neutral `answer_edited_post_hint` | ❌ Excluded |
 
 ---
 
@@ -89,5 +89,4 @@
 | Symbol | Meaning |
 |---|---|
 | ✅ Active | Fully implemented and in use |
-| ⚠️ Pending | Designed and documented but not yet implemented |
 | ❌ Excluded | Deliberately not implemented |

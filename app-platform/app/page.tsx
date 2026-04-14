@@ -253,7 +253,7 @@ export default function Home() {
               textAlign: "center",
             }}
           >
-            4 timed tasks across 2 categories, each with AI assistance. Workload surveys follow each task. Estimated duration: 75–90 minutes.
+            3 timed tasks across 3 categories, each with AI assistance. Workload surveys follow each task. Estimated duration: 60-75 minutes.
           </p>
         </div>
 

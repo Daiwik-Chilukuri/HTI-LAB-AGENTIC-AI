@@ -78,11 +78,44 @@ export function getSurveysDb(): Database.Database {
     _surveysDb.pragma('journal_mode = WAL');
     _surveysDb.pragma('foreign_keys = ON');
     initSurveysDb(_surveysDb);
+    migrateSessionsSchema(_surveysDb);
     migrateScaleTypes(_surveysDb);
+    migrateRunsFaulty(_surveysDb);
     seedBuiltInTlxQuestions(_surveysDb);
     seedDefaultDemographicQuestions(_surveysDb);
   }
   return _surveysDb;
+}
+
+function migrateSessionsSchema(db: Database.Database) {
+  // Add task_type_c column if the sessions table exists but lacks this column
+  // (old sessions created before this field was added)
+  try {
+    const colExists = db.prepare("PRAGMA table_info(sessions)").all()
+      .some((c: Record<string, unknown>) => c.name === 'task_type_c');
+    if (!colExists) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN task_type_c TEXT NOT NULL DEFAULT 'writing'`);
+    }
+  } catch { /* ignore */ }
+  // Add use_test_model column if sessions table exists but lacks it
+  try {
+    const colExists = db.prepare("PRAGMA table_info(sessions)").all()
+      .some((c: Record<string, unknown>) => c.name === 'use_test_model');
+    if (!colExists) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN use_test_model INTEGER NOT NULL DEFAULT 0`);
+    }
+  } catch { /* ignore */ }
+}
+
+function migrateRunsFaulty(db: Database.Database) {
+  // Add is_faulty column if the runs table exists but lacks this column
+  try {
+    const colExists = db.prepare("PRAGMA table_info(runs)").all()
+      .some((c: Record<string, unknown>) => c.name === 'is_faulty');
+    if (!colExists) {
+      db.exec(`ALTER TABLE runs ADD COLUMN is_faulty INTEGER NOT NULL DEFAULT 0`);
+    }
+  } catch { /* ignore */ }
 }
 
 function migrateScaleTypes(db: Database.Database) {
@@ -110,8 +143,10 @@ function initSurveysDb(db: Database.Database) {
       participant_id TEXT NOT NULL,
       task_type_a TEXT NOT NULL,
       task_type_b TEXT NOT NULL,
+      task_type_c TEXT NOT NULL,
       agent_order TEXT NOT NULL DEFAULT '[]',
       counterbalance_key TEXT NOT NULL DEFAULT '',
+      use_test_model INTEGER NOT NULL DEFAULT 0,
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT,
       FOREIGN KEY (participant_id) REFERENCES participants(id)
@@ -125,6 +160,7 @@ function initSurveysDb(db: Database.Database) {
       task_type TEXT NOT NULL CHECK(task_type IN ('coding','puzzle','writing')),
       task_id INTEGER NOT NULL DEFAULT 0,
       model_id TEXT NOT NULL,
+      is_faulty INTEGER NOT NULL DEFAULT 0,
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT,
       result_data TEXT NOT NULL DEFAULT '{}',

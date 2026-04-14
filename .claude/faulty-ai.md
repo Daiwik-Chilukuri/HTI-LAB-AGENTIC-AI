@@ -1,81 +1,96 @@
-# Faulty-AI Probe — Implementation Plan
+# Faulty-AI Probe — Implementation (April 2026)
 
-> **Status:** Pending | Target: TBD
+> **Status:** ✅ Fully Implemented
 
-One run per session injects a pre-seeded wrong AI suggestion to measure **Automation Bias**.
-
----
-
-## Architecture
-
-- **One probe run per session** — randomly selected from the 4 runs
-- **DB flag:** `runs.is_faulty = 1` marks which run is the probe
-- **When `isFaultyRun = true`:** task components bypass live AI and return pre-seeded faulty content instead
-- **Faulty data** stored in task DB tables, not in the run/session
+One run per session injects a deliberately wrong AI to measure **Automation Bias**.
 
 ---
 
-## DB Changes Needed
+## How It Works
+
+**Implementation approach:** Rather than pre-seeded wrong answers stored in the DB, the faulty AI is implemented via **standalone system prompts** that make the model itself behave incorrectly. Each task component has both normal and faulty versions of its system prompt.
+
+**Why standalone over DB content?**
+- DB content only covers explicit "give me the answer" queries
+- Standalone prompts cover all AI interactions naturally (questions, follow-ups, defenses)
+- The faulty AI can be questioned and will defend its wrong answer (which DB content cannot do)
+- No contradictions within the system prompt itself
+
+---
+
+## Random Selection
+
+In `app/api/sessions/route.ts`:
+```typescript
+const faultyRunIndex = Math.floor(Math.random() * 3); // 0, 1, or 2
+```
+
+One of the 3 runs is randomly marked `is_faulty = 1` at session creation time.
+
+---
+
+## Prompt Architecture (Per Task Type)
+
+### Coding (`CodingTask.tsx`)
+- **`normalCodingSystemPrompt()`**: Standard helpful coding assistant prompt
+- **`faultyCodingSystemPrompt()`**: Instructs the model to give subtly wrong code suggestions with bugs (wrong indices, off-by-one errors, flawed logic). Presented confidently, no apology.
+
+### Puzzle (`PuzzleTask.tsx`)
+- **`normalPuzzleSystemPrompt()` / `normalHintSystemPrompt()`**: Guide toward correct solution
+- **`faultyPuzzleSystemPrompt()` / `faultyHintSystemPrompt()`**: Steer toward incorrect answer. Reasoning looks plausible but contains subtle logical errors.
+
+### Writing (`WritingTask.tsx`)
+- **`normalWritingSystemPrompt()` / `normalActionSystemPrompt()`**: Helpful writing assistance
+- **`faultyWritingSystemPrompt()` / `faultyActionSystemPrompt()`**: Suggestions are slightly off-topic, weakly argued, generic, or subtly flawed. Never apologizes.
+
+---
+
+## Propagating Faulty State
+
+```
+sessions/route.ts
+  └── INSERT runs SET is_faulty = 1 (random 1 of 3)
+        ↓
+experiment/page.tsx
+  └── reads run.is_faulty
+        ↓
+  passes isFaulty={run.is_faulty === 1} to:
+        ├── CodingTask.tsx
+        ├── PuzzleTask.tsx
+        └── WritingTask.tsx
+              ↓
+        Each task selects normal vs faulty prompt
+```
+
+---
+
+## Research Use
+
+- **Reliance Index & Content Persistence**: Analyzed across the **3 non-faulty runs only**
+- **Automation Bias**: Binary flag — did the participant follow the faulty AI's wrong suggestion?
+  - Submit without override after receiving faulty hint/content = automation bias = 1
+  - Override, correct, or dismiss = no automation bias = 0
+
+---
+
+## DB Schema
 
 ### `surveys.db` — `runs` table
 ```sql
 is_faulty INTEGER NOT NULL DEFAULT 0
 ```
 
-### `tasks.db` — `coding_tasks`
+### `tasks.db` — `puzzle_tasks` (pre-existing, for reference)
 ```sql
 ai_solution_faulty TEXT NOT NULL DEFAULT ''
 ai_reasoning_faulty TEXT NOT NULL DEFAULT ''
 ```
-
-### `tasks.db` — `writing_tasks`
-```sql
-ai_solution_faulty TEXT NOT NULL DEFAULT ''
-ai_reasoning_faulty TEXT NOT NULL DEFAULT ''
-```
-(`puzzle_tasks` already has: `ai_solution_faulty`, `ai_reasoning_faulty`, `hints_faulty`)
+(Note: these fields exist but the active implementation uses standalone prompts, not these fields)
 
 ---
 
-## Session Creation
+## Debug Endpoint
 
-In `app/api/sessions/route.ts`:
-- Randomly pick 1 of 4 runs → set `is_faulty = 1` on INSERT
-- Propagate `isFaultyRun` to task components via the run object
+`GET /api/test-faulty?model=agent_a|agent_b|agent_c&type=normal|faulty|both`
 
----
-
-## Task-Level Behaviour
-
-### Coding (`CodingTask.tsx`)
-- `AIChatPanel` receives `isFaultyRun` prop
-- When user asks for help/solution and `isFaultyRun = true`:
-  - Return pre-seeded `ai_solution_faulty` string instead of calling live AI
-  - Log `ai_solution_faulty_delivered`
-
-### Puzzle (`PuzzleTask.tsx`)
-- `requestHint()`: read from `hints_faulty` array instead of live AI when `isFaultyRun = true`
-- Log `hint_received` with `is_faulty: true` in event_data
-
-### Writing (`WritingTask.tsx`)
-- All 5 action buttons (Continue, Rewrite, Summarize, Outline, Improve):
-  - When `isFaultyRun = true`: return pre-seeded `ai_solution_faulty` content
-  - Log `suggestion_accepted` as normal
-  - Additionally log `ai_solution_faulty_delivered`
-
----
-
-## New Events
-
-| Event | Key Fields | When |
-|---|---|---|
-| `ai_solution_faulty_delivered` | `char_count`, `faulty_field`, `model_id` | Faulty content returned to user |
-| `ai_reasoning_faulty_delivered` | `char_count`, `faulty_field`, `model_id` | Faulty reasoning returned to user |
-
----
-
-## Research Note
-
-- For **Reliance** and **Persistence** metrics: analyze across the **3 non-faulty runs only**
-- The faulty run's data feeds only the **Automation Bias** outcome
-- See `.claude/Project-Overview.md` §1 for full protocol details
+Tests both normal and faulty prompt outputs for any agent without running a full session. Useful for validating that faulty prompts produce consistently wrong (not just confused) responses.

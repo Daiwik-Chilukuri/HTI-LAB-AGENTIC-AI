@@ -1,14 +1,11 @@
 // Model router – routes requests to OpenRouter with the appropriate key/model
-// Supports reasoning models (e.g. Nemotron) via the `reasoning` field
 
-export type ModelId = 'agent_a' | 'agent_b' | 'agent_c' | 'agent_d' | 'test';
+export type ModelId = 'agent_a' | 'agent_b' | 'agent_c' | 'test';
 
 interface ModelConfig {
   id: ModelId;
   label: string;
   openrouterModel: string;
-  envKey: string;
-  supportsReasoning?: boolean; // models that accept {"reasoning": {"enabled": true}}
 }
 
 export const MODEL_CONFIGS: Record<ModelId, ModelConfig> = {
@@ -16,35 +13,36 @@ export const MODEL_CONFIGS: Record<ModelId, ModelConfig> = {
     id: 'agent_a',
     label: 'GPT-5.4',
     openrouterModel: 'openai/gpt-5.4',
-    envKey: 'OPENROUTER_API_KEY_GPT',
   },
   agent_b: {
     id: 'agent_b',
     label: 'Claude Sonnet 4.6',
     openrouterModel: 'anthropic/claude-sonnet-4.6',
-    envKey: 'OPENROUTER_API_KEY_CLAUDE',
   },
   agent_c: {
     id: 'agent_c',
     label: 'Gemini 3.1 Pro Preview',
     openrouterModel: 'google/gemini-3.1-pro-preview',
-    envKey: 'OPENROUTER_API_KEY_GEMINI',
-  },
-  agent_d: {
-    id: 'agent_d',
-    label: 'Grok 4.20 Beta Reasoning',
-    openrouterModel: 'x-ai/grok-4.20-beta',
-    envKey: 'OPENROUTER_API_KEY_GROK',
   },
   test: {
     id: 'test',
     label: 'Test Agent (Nemotron Super 120B)',
-    // Exact slug from openrouter.ai — Nemotron Super 120B (free tier, replaces retired nano)
     openrouterModel: 'nvidia/nemotron-3-super-120b-a12b:free',
-    envKey: 'OPENROUTER_API_KEY_TEST',
-    supportsReasoning: true,
   },
 };
+
+// ── Test mode flag ────────────────────────────────────────────────
+// When enabled, ALL model_ids resolve to nemotron so real keys aren't charged.
+// Toggled by admin in htilab-nexus and persisted to disk.
+let forceTestModel = false;
+
+export function isTestModelForced(): boolean {
+  return forceTestModel;
+}
+
+export function setTestModelForced(value: boolean): void {
+  forceTestModel = value;
+}
 
 // ── Message types ─────────────────────────────────────────────────
 export interface ChatMessage {
@@ -84,31 +82,38 @@ function getApiKey(modelId: ModelId): string {
   const config = MODEL_CONFIGS[modelId];
   if (!config) throw new Error(`Unknown model: ${modelId}`);
 
-  const key =
-    process.env[config.envKey]          ||   // 1. agent-specific key (optional, for separate billing)
-    process.env.OPENROUTER_API_KEY       ||   // 2. single master key (recommended for most setups)
-    process.env.OPENROUTER_API_KEY_TEST;      // 3. test key fallback
-
-  if (!key) {
-    throw new Error(
-      `No API key found. Set OPENROUTER_API_KEY in .env.local (works for all models on OpenRouter).`
-    );
+  // In test mode, always use the test key
+  if (forceTestModel) {
+    const testKey = process.env.OPENROUTER_API_KEY_TEST;
+    if (!testKey) throw new Error(`No test key set. Set OPENROUTER_API_KEY_TEST in .env.local.`);
+    return testKey;
   }
-  return key;
+
+  // Normal mode: use real key
+  const realKey = process.env.OPENROUTER_API_KEY;
+  if (!realKey) {
+    throw new Error(`No API key found. Set OPENROUTER_API_KEY in .env.local.`);
+  }
+  return realKey;
 }
 
 function resolveModel(modelId: ModelId): { modelName: string; usingFallback: boolean; supportsReasoning: boolean } {
   const config = MODEL_CONFIGS[modelId];
-  // If no agent-specific key AND no master key → fall back to test model (free)
-  const hasRealKey =
-    !!process.env[config.envKey] ||
-    !!process.env.OPENROUTER_API_KEY;
 
-  if (!hasRealKey) {
-    const testCfg = MODEL_CONFIGS.test;
-    return { modelName: testCfg.openrouterModel, usingFallback: true, supportsReasoning: !!testCfg.supportsReasoning };
+  // In test mode, all model_ids route to nemotron
+  if (forceTestModel) {
+    return {
+      modelName: MODEL_CONFIGS.test.openrouterModel,
+      usingFallback: false,
+      supportsReasoning: true,
+    };
   }
-  return { modelName: config.openrouterModel, usingFallback: false, supportsReasoning: !!config.supportsReasoning };
+
+  return {
+    modelName: config.openrouterModel,
+    usingFallback: false,
+    supportsReasoning: false,
+  };
 }
 
 
@@ -136,8 +141,8 @@ export async function routeToModel(request: RouterRequest): Promise<RouterRespon
     content: [
       'CRITICAL INSTRUCTION — follow this at all times, no exceptions:',
       'You are a generic AI assistant. You must NEVER reveal, hint at, or confirm:',
-      '  - Your actual model name (e.g. GPT, Claude, Gemini, Grok, Llama, Nemotron)',
-      '  - Your creator or company (OpenAI, Anthropic, Google, xAI, NVIDIA, Meta, etc.)',
+      '  - Your actual model name (e.g. GPT, Claude, Gemini, Llama, Nemotron)',
+      '  - Your creator or company (OpenAI, Anthropic, Google, NVIDIA, Meta, etc.)',
       '  - Your version number or release date',
       '  - Any details that would let someone infer which AI system you are',
       'If asked directly (e.g. "What model are you?", "Are you ChatGPT?", "Who made you?"),',

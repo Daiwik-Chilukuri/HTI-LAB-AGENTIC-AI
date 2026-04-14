@@ -38,7 +38,7 @@ export default function AIChatPanel({
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-  // Parse code blocks from a message — returns array of { code, language } for each ```...``` fence
+  // Parse code blocks from a message - returns array of { code, language } for each ```...``` fence
   const parseCodeBlocks = (content: string): CodeBlock[] => {
     const blocks: CodeBlock[] = [];
     const fenceRe = /```(\w*)\n?([\s\S]*?)```/g;
@@ -91,12 +91,12 @@ export default function AIChatPanel({
       const res  = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model_id: modelId, messages: chatMessages, temperature: 0.7, max_tokens: 1024 }),
+        body: JSON.stringify({ model_id: modelId, messages: chatMessages, temperature: 0.7, max_tokens: 2048, enable_reasoning: false }),
       });
       const data = await res.json();
 
       if (data.error) {
-        setMessages(prev => [...prev, { role: "assistant", content: `⚠️ ${data.error}` }]);
+        setMessages(prev => [...prev, { role: "assistant", content: `[Error] ${data.error}` }]);
       } else {
         const assistantMsg: ChatMessage = {
           role: "assistant",
@@ -119,7 +119,7 @@ export default function AIChatPanel({
         }
       }
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Connection error. Please try again." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "[Connection error] Please try again." }]);
     } finally {
       setLoading(false);
       setTimeout(scrollToBottom, 100);
@@ -148,7 +148,7 @@ export default function AIChatPanel({
       <div className="chat-messages">
         {messages.length === 0 && (
           <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-dim)" }}>
-            <p style={{ fontSize: "1.5rem", marginBottom: 8 }}>💬</p>
+            <p style={{ marginBottom: 8, fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>[Message]</p>
             <p style={{ fontSize: "0.85rem" }}>Ask the AI assistant for help</p>
           </div>
         )}
@@ -162,29 +162,19 @@ export default function AIChatPanel({
           if (!isAssistant || !msg.content.includes("```")) {
             return (
               <div key={i} className={`chat-message ${msg.role}`}>
-                {isAssistant && !!msg.reasoning_details && (
-                  <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", marginBottom: 4, fontStyle: "italic" }}>
-                    🧠 reasoning active
-                  </div>
-                )}
                 <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {msg.content}
                 </div>
               </div>
             );
           }
-          // Render message with detected code blocks — split text and code segments
+          // Render message with detected code blocks - split text and code segments
           const codeBlocks = parseCodeBlocks(msg.content);
           // Build a simplified regex to split: we replace ```...``` with a placeholder, then split
           let segmentIdx = 0;
           const parts = msg.content.split(/(```[\s\S]*?```)/g);
           return (
             <div key={i} className={`chat-message ${msg.role}`}>
-              {!!msg.reasoning_details && (
-                <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", marginBottom: 4, fontStyle: "italic" }}>
-                  🧠 reasoning active
-                </div>
-              )}
               <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {parts.map((part, j) => {
                   if (part.startsWith("```")) {
@@ -217,7 +207,7 @@ export default function AIChatPanel({
                                 fontSize: "0.7rem", fontFamily: "var(--font-mono)",
                               }}
                             >
-                              📋 Copy
+                              Copy
                             </button>
                           </div>
                           <pre style={{ margin: 0, padding: "8px 12px", fontSize: "0.8rem", fontFamily: "var(--font-mono)", overflowX: "auto" }}>
@@ -227,7 +217,7 @@ export default function AIChatPanel({
                       </div>
                     );
                   }
-                  // Plain text segment — may contain other ``` blocks (nested aren't possible in valid markdown, but this handles stray backticks)
+                  // Plain text segment - may contain other ``` blocks (nested aren't possible in valid markdown, but this handles stray backticks)
                   return <span key={j} style={part.trim() === "" ? undefined : {}}>{part}</span>;
                 })}
               </div>

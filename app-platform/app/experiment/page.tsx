@@ -14,6 +14,7 @@ interface RunInfo {
   task_type: string;
   task_id: number;
   model_id: string;
+  is_faulty: number;
 }
 
 interface SessionData {
@@ -36,9 +37,9 @@ interface GlobalQuestion {
 }
 
 const TASK_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  coding: { label: "Programming Task", icon: "💻", color: "var(--accent-blue)" },
-  puzzle: { label: "Logic Puzzle", icon: "🧩", color: "var(--accent-amber)" },
-  writing: { label: "Creative Writing", icon: "✍️", color: "var(--accent-emerald)" },
+  coding: { label: "Programming Task", color: "var(--accent-blue)" },
+  puzzle: { label: "Logic Puzzle", color: "var(--accent-amber)" },
+  writing: { label: "Creative Writing", color: "var(--accent-emerald)" },
 };
 
 const RUN_TIME_SECONDS = 15 * 60; // 15 minutes per run
@@ -102,7 +103,7 @@ export default function ExperimentPage() {
     const nextRun = currentRun + 1;
 
     if (nextRun >= session.runs.length) {
-      // All runs done — enter debrief and fetch global survey
+      // All runs done - enter debrief and fetch global survey
       setPhase("debrief");
       fetch('/api/global-survey?active=1')
         .then(r => r.json())
@@ -144,7 +145,6 @@ export default function ExperimentPage() {
 
   const run = session.runs[currentRun];
   const taskInfo = TASK_LABELS[run?.task_type] || TASK_LABELS.coding;
-  const isNewBlock = currentRun === 2; // Block 2 starts at run 3
 
   // ── INTRO PHASE ───
   if (phase === "intro") {
@@ -172,26 +172,10 @@ export default function ExperimentPage() {
               ))}
             </div>
 
-            {isNewBlock && currentRun === 2 && (
-              <div style={{
-                padding: "12px 20px",
-                background: "rgba(59, 130, 246, 0.1)",
-                border: "1px solid rgba(59, 130, 246, 0.2)",
-                borderRadius: "var(--radius-sm)",
-                marginBottom: 24,
-              }}>
-                <p style={{ fontSize: "0.85rem", color: "var(--accent-blue)" }}>
-                  ✨ <strong>Task Block 2</strong> — You're now switching to a new task type
-                </p>
-              </div>
-            )}
-
-            <div style={{ fontSize: "3rem", marginBottom: 16 }}>
-              {taskInfo.icon}
-            </div>
+            <div style={{ marginBottom: 16 }} />
 
             <h2 style={{ marginBottom: 8, color: "var(--text-primary)" }}>
-              Run {run.run_number} of 4
+              Run {run.run_number} of {session.runs.length}
             </h2>
 
             <p style={{ color: taskInfo.color, fontWeight: 600, fontSize: "1.1rem", marginBottom: 4 }}>
@@ -207,7 +191,7 @@ export default function ExperimentPage() {
 
             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", lineHeight: 1.7, marginBottom: 32 }}>
               You will work with <strong>one AI assistant</strong> for the full 15 minutes.
-              The assistant's identity is hidden — focus on the quality of help provided.
+              The assistant's identity is hidden. Focus on the quality of help provided.
               A short survey will follow this task.
             </p>
 
@@ -239,12 +223,11 @@ export default function ExperimentPage() {
           background: "var(--bg-secondary)",
         }}>
           <div className="flex items-center gap-3">
-            <span style={{ fontSize: "1.2rem" }}>{taskInfo.icon}</span>
             <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>
               {taskInfo.label}
             </span>
             <span className="badge badge-teal">
-              Run {run.run_number}/4
+              Run {run.run_number}/{session.runs.length}
             </span>
           </div>
 
@@ -273,6 +256,7 @@ export default function ExperimentPage() {
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              isFaulty={run.is_faulty === 1}
               onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
@@ -283,6 +267,7 @@ export default function ExperimentPage() {
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              isFaulty={run.is_faulty === 1}
               onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
@@ -293,6 +278,7 @@ export default function ExperimentPage() {
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              isFaulty={run.is_faulty === 1}
               onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
@@ -329,10 +315,10 @@ export default function ExperimentPage() {
         <main className="fade-in" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ maxWidth: 560, width: "100%", padding: "0 24px", textAlign: "center" }}>
             <div className="glass-card" style={{ padding: 48 }}>
-              <div style={{ fontSize: "3rem", marginBottom: 16 }}>🎉</div>
-              <h2 style={{ marginBottom: 8 }}>All Done — Thank You!</h2>
+              <div style={{ marginBottom: 16, color: "var(--accent-emerald)", fontSize: "2rem" }}>[ ]</div>
+              <h2 style={{ marginBottom: 8 }}>All Done - Thank You!</h2>
               <p style={{ color: "var(--text-secondary)", marginBottom: 32, lineHeight: 1.7 }}>
-                You completed all 4 runs and the end-of-study survey.
+                You completed all {session.runs.length} runs and the end-of-study survey.
                 Your responses have been recorded. Please let the experimenter know you are finished.
               </p>
               <div style={{ padding: "16px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", marginBottom: 24 }}>
@@ -362,10 +348,10 @@ export default function ExperimentPage() {
         <div style={{ maxWidth: 680, width: "100%" }}>
           {/* Header */}
           <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>📋</div>
+            <div style={{ marginBottom: 12 }} />
             <h2 style={{ marginBottom: 8 }}>End-of-Study Survey</h2>
             <p style={{ color: "var(--text-secondary)", lineHeight: 1.7 }}>
-              You've completed all 4 task runs. Please answer these final questions before finishing.
+              You've completed all {session.runs.length} task runs. Please answer these final questions before finishing.
             </p>
           </div>
 

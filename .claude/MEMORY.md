@@ -1,3 +1,3 @@
 # Memory Index
 
-- [faulty-ai.md](faulty-ai.md) — Faulty-AI probe plan (pending implementation)
+- [faulty-ai.md](faulty-ai.md) — Faulty-AI probe implementation (✅ fully implemented April 2026)

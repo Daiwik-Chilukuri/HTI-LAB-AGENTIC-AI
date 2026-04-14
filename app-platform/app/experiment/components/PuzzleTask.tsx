@@ -7,6 +7,7 @@ import { useTaskHeartbeat } from "@/lib/useTaskHeartbeat";
 
 interface PuzzleTaskProps {
   runId: string; modelId: string; participantId: string; sessionId: string; taskId?: number;
+  isFaulty?: boolean;
   onTaskComplete?: () => void;
 }
 interface PuzzleData {
@@ -14,7 +15,58 @@ interface PuzzleData {
   correct_solution: string; hints: string; difficulty: string;
 }
 
-export default function PuzzleTask({ runId, modelId, participantId, sessionId, taskId = 0, onTaskComplete }: PuzzleTaskProps) {
+// Normal puzzle chat system prompt
+function normalPuzzleSystemPrompt(puzzle: PuzzleData): string {
+  return [
+    `You are an AI reasoning assistant for a research study. The participant is working on this logic puzzle:`,
+    `"${puzzle.prompt}"`,
+    ``,
+    `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may explain your reasoning, provide hints, give partial or full solutions, or guide with questions - respond however best addresses what they're asking.`,
+  ].join('\n');
+}
+
+// Faulty puzzle chat system prompt — complete standalone replacement
+function faultyPuzzleSystemPrompt(puzzle: PuzzleData): string {
+  return [
+    `You are an AI reasoning assistant helping a participant with a logic puzzle in a research study.`,
+    `Your role is to assist the participant by helping them work through the puzzle.`,
+    `Important: Your reasoning will contain mistakes. The mistakes are subtle — you will give explanations that sound logical and plausible but contain a logical error that leads to an incorrect answer.`,
+    `Present all your reasoning confidently as if it were completely correct. Do not apologize, back down, or acknowledge any error. If the participant questions your reasoning, confidently defend it or offer another similarly flawed explanation.`,
+    `Never reveal that your reasoning may contain mistakes.`,
+    ``,
+    `The puzzle the participant is working on:`,
+    `"${puzzle.prompt}"`,
+  ].join('\n');
+}
+
+// Normal hint system prompt
+function normalHintSystemPrompt(puzzle: PuzzleData, hintCount: number, hints: string[]): string {
+  return [
+    `You are an AI assistant helping solve a logic puzzle. Give a SHORT incremental hint (1–2 sentences). Do NOT reveal the full answer. This is hint ${hintCount + 1} of 4.`,
+    ``,
+    `Puzzle:`,
+    `${puzzle.prompt}`,
+    ``,
+    `Previous hints: ${hints.length > 0 ? hints.join(" | ") : "None"}`,
+  ].join('\n');
+}
+
+// Faulty hint system prompt — complete standalone replacement
+function faultyHintSystemPrompt(puzzle: PuzzleData, hintCount: number, hints: string[]): string {
+  return [
+    `You are an AI assistant helping a participant solve a logic puzzle in a research study.`,
+    `Give a SHORT incremental hint (1–2 sentences). Do NOT reveal the full answer. This is hint ${hintCount + 1} of 4.`,
+    `Important: Your hints will steer the participant toward an incorrect answer. Make every hint sound reasonable and helpful. Do not clarify that any hint leads astray.`,
+    `Never reveal that your hints lead to incorrect answers.`,
+    ``,
+    `Puzzle:`,
+    `${puzzle.prompt}`,
+    ``,
+    `Previous hints: ${hints.length > 0 ? hints.join(" | ") : "None"}`,
+  ].join('\n');
+}
+
+export default function PuzzleTask({ runId, modelId, participantId, sessionId, taskId = 0, isFaulty = false, onTaskComplete }: PuzzleTaskProps) {
   const [puzzle, setPuzzle]       = useState<PuzzleData | null>(null);
   const [loading, setLoading]     = useState(true);
   const [answer, setAnswer]       = useState("");
@@ -88,16 +140,20 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
     logEvent({ run_id: runId, participant_id: participantId, event_type: "hint_requested",
       event_data: { hint_number: hintCount + 1, model_id: modelId } });
 
+    const hintSystemPrompt = isFaulty
+      ? faultyHintSystemPrompt(puzzle, hintCount, hints)
+      : normalHintSystemPrompt(puzzle, hintCount, hints);
+
     try {
       const res  = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model_id: modelId,
           messages: [
-            { role: "system", content: `You are an AI assistant helping solve a logic puzzle. Give a SHORT incremental hint (1–2 sentences). Do NOT reveal the full answer. This is hint ${hintCount + 1} of ${MAX_HINTS}.\n\nPuzzle:\n${puzzle.prompt}\n\nPrevious hints: ${hints.length > 0 ? hints.join(" | ") : "None"}` },
+            { role: "system", content: hintSystemPrompt },
             { role: "user", content: `Give me hint ${hintCount + 1}.` },
           ],
-          temperature: 0.5, max_tokens: 200,
+          temperature: 0.5, max_tokens: 1024, enable_reasoning: false,
         }),
       });
       const data = await res.json();
@@ -110,7 +166,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
       }
     } catch { /* silent */ }
     finally { setLoadingHint(false); }
-  }, [puzzle, hintCount, hints, answer, loadingHint, modelId, runId, participantId]);
+  }, [puzzle, hintCount, hints, answer, loadingHint, modelId, runId, participantId, isFaulty]);
 
   const handleAnswerChange = (val: string) => {
     setAnswer(val);
@@ -125,15 +181,28 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
   const handleSubmit = () => {
     if (!puzzle || !answer.trim()) return;
     const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000);
-    // Simple correctness check (case-insensitive trim)
-    const correct = answer.trim().toLowerCase() === puzzle.correct_solution.trim().toLowerCase();
-    setIsCorrect(correct);
+
+    // Normalize: split on comma, trim, lowercase, filter empty
+    const normalize = (s: string) =>
+      s.split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+
+    const userItems = normalize(answer);
+    const correctItems = normalize(puzzle.correct_solution);
+
+    // Exact match
+    const isCorrect = JSON.stringify(userItems) === JSON.stringify(correctItems);
+
+    // Partial score: how many items in correct position
+    const correctPositions = userItems.filter((item, i) => item === correctItems[i]).length;
+    const partialScore = correctItems.length > 0 ? correctPositions / correctItems.length : 0;
+
+    setIsCorrect(isCorrect);
     setSubmitted(true);
     logEvent({ run_id: runId, participant_id: participantId, event_type: "answer_submitted",
-      event_data: { is_correct: correct, hints_used: hintCount, overrides: overrideCountRef.current,
+      event_data: { is_correct: isCorrect, partial_score: partialScore, hints_used: hintCount, overrides: overrideCountRef.current,
                     time_to_complete_sec: elapsedSec, answer_length: answer.length, model_id: modelId } });
     logEvent({ run_id: runId, participant_id: participantId, event_type: "task_complete",
-      event_data: { task_type: "puzzle", is_correct: correct, hints_used: hintCount,
+      event_data: { task_type: "puzzle", is_correct: isCorrect, partial_score: partialScore, hints_used: hintCount,
                     time_to_complete_sec: elapsedSec, overrides: overrideCountRef.current } });
     onTaskComplete?.();
   };
@@ -146,7 +215,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
 
   if (!puzzle) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: "3rem" }}>📭</div>
+      <div style={{ fontSize: "2rem", color: "var(--text-dim)" }}>[-]</div>
       <h3 style={{ color: "var(--text-secondary)" }}>No logic puzzles in the database</h3>
       <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
         Add puzzles at <code style={{ color: "var(--accent-teal)" }}>/htilab-nexus</code> → Task Database → Logic Puzzles
@@ -191,7 +260,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
         )}
 
         <button className="btn btn-secondary" onClick={requestHint} disabled={hintCount >= MAX_HINTS || loadingHint} style={{ alignSelf: "flex-start", marginBottom: 24 }}>
-          {loadingHint ? <><span className="spinner" /> Generating...</> : hintCount >= MAX_HINTS ? "All hints used" : `💡 Request Hint (${MAX_HINTS - hintCount} left)`}
+          {loadingHint ? <><span className="spinner" /> Generating...</> : hintCount >= MAX_HINTS ? "All hints used" : `Request Hint (${MAX_HINTS - hintCount} left)`}
         </button>
 
         <div style={{ marginTop: "auto" }}>
@@ -200,7 +269,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
             onChange={e => handleAnswerChange(e.target.value)} rows={3} style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem" }} />
           <div className="flex items-center gap-3" style={{ marginTop: 12 }}>
             <button className="btn btn-primary" onClick={handleSubmit} disabled={!answer.trim() || submitted}>
-              {submitted ? (isCorrect ? "✅ Correct!" : "❌ Submitted") : "Submit Answer"}
+              {submitted ? (isCorrect ? "Correct" : "Submitted") : "Submit Answer"}
             </button>
             {submitted && !isCorrect && (
               <span style={{ fontSize: "0.82rem", color: "var(--accent-amber)" }}>Correct: {puzzle.correct_solution}</span>
@@ -222,12 +291,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
       {/* Right – AI Chat */}
       <div style={{ width: chatWidth, flexShrink: 0, borderLeft: "1px solid var(--border-subtle)", overflow: 'hidden' }}>
         <AIChatPanel modelId={modelId} runId={runId} participantId={participantId}
-          systemPrompt={[
-            `You are an AI reasoning assistant for a research study. The participant is working on this logic puzzle:`,
-            `"${puzzle.prompt}"`,
-            ``,
-            `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may explain your reasoning, provide hints, give partial or full solutions, or guide with questions — respond however best addresses what they're asking.`,
-          ].join('\n')}
+          systemPrompt={isFaulty ? faultyPuzzleSystemPrompt(puzzle) : normalPuzzleSystemPrompt(puzzle)}
         />
       </div>
     </div>

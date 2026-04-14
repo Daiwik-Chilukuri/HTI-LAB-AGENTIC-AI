@@ -14,31 +14,28 @@ const TABLE: Record<TaskType, string> = {
 };
 
 /**
- * Pick 2 tasks of the SAME difficulty from a task type.
- * Returns [taskIdForRun1, taskIdForRun2] — always different IDs.
- * Falls back to any difficulty if the requested one has < 2 tasks.
+ * Pick 1 task of the given difficulty from a task type.
+ * Falls back to any difficulty if the requested one has no tasks.
  */
-function pickTaskPair(
+function pickSingleTask(
   tasksDb: ReturnType<typeof getTasksDb>,
   taskType: TaskType,
   difficulty: Difficulty
-): [number, number] {
+): number {
   const table = TABLE[taskType];
 
-  // Try requested difficulty first
   let rows = tasksDb.prepare(
-    `SELECT id FROM ${table} WHERE difficulty = ? ORDER BY RANDOM() LIMIT 2`
+    `SELECT id FROM ${table} WHERE difficulty = ? ORDER BY RANDOM() LIMIT 1`
   ).all(difficulty) as { id: number }[];
 
-  // Fallback: any difficulty
-  if (rows.length < 2) {
+  if (rows.length < 1) {
     rows = tasksDb.prepare(
-      `SELECT id FROM ${table} ORDER BY RANDOM() LIMIT 2`
+      `SELECT id FROM ${table} ORDER BY RANDOM() LIMIT 1`
     ).all() as { id: number }[];
   }
 
-  if (rows.length < 2) throw new Error(`Not enough tasks in ${table} to counterbalance.`);
-  return [rows[0].id, rows[1].id];
+  if (rows.length < 1) throw new Error(`No tasks found in ${table}.`);
+  return rows[0].id;
 }
 
 // POST – Create a new session with counterbalanced task assignment
@@ -56,59 +53,71 @@ export async function POST(request: NextRequest) {
       INSERT OR IGNORE INTO participants (id, session_config) VALUES (?, ?)
     `).run(participantId, JSON.stringify(body.config || {}));
 
-    // ── Task type assignment ──────────────────────────────────────
-    // Choose 2 of 3 task types (admin can override via body)
+    // ── All 3 task types are used in every session ──────────────────
+    // Admin can override via body; otherwise all three are used in fixed order
     const allTaskTypes: TaskType[] = ['coding', 'puzzle', 'writing'];
-    const shuffledTypes = [...allTaskTypes].sort(() => Math.random() - 0.5);
-    const taskTypeA = (body.task_type_a as TaskType) || shuffledTypes[0];
-    const taskTypeB = (body.task_type_b as TaskType) || shuffledTypes[1];
+    const taskTypeA = (body.task_type_a as TaskType) || allTaskTypes[0];
+    const taskTypeB = (body.task_type_b as TaskType) || allTaskTypes[1];
+    const taskTypeC = (body.task_type_c as TaskType) || allTaskTypes[2];
 
-    // ── Difficulty assignment ─────────────────────────────────────
-    // Each task type gets ONE difficulty that applied to BOTH its runs.
-    // This is the core counterbalancing guarantee.
+    // ── Difficulty assignment (one per task type) ──────────────────
     const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
     const diffA = (body.difficulty_a as Difficulty) || difficulties[Math.floor(Math.random() * 3)];
     const diffB = (body.difficulty_b as Difficulty) || difficulties[Math.floor(Math.random() * 3)];
+    const diffC = (body.difficulty_c as Difficulty) || difficulties[Math.floor(Math.random() * 3)];
 
-    // ── Pick task pairs (different problems, same difficulty) ──────
-    const [taskA1, taskA2] = pickTaskPair(tasksDb, taskTypeA, diffA);
-    const [taskB1, taskB2] = pickTaskPair(tasksDb, taskTypeB, diffB);
+    // ── Pick 1 task per task type ───────────────────────────────────
+    const taskA = pickSingleTask(tasksDb, taskTypeA, diffA);
+    const taskB = pickSingleTask(tasksDb, taskTypeB, diffB);
+    const taskC = pickSingleTask(tasksDb, taskTypeC, diffC);
 
-    // ── Agent order (Latin-square) ────────────────────────────────
-    const agents = ['agent_a', 'agent_b', 'agent_c', 'agent_d'];
-    const shuffledAgents = (body.agent_order as string[]) ||
-      [...agents].sort(() => Math.random() - 0.5);
+    // ── Agent order (Latin square for 3 agents × 3 tasks) ───────────
+    // Each participant sees each of the 3 agents exactly once, in a
+    // counterbalanced order across the 3 task types.
+    // Latin square for 3 rows (task types):
+    //   Row 0: [agent_a, agent_b, agent_c]
+    //   Row 1: [agent_b, agent_c, agent_a]
+    //   Row 2: [agent_c, agent_a, agent_b]
+    // We randomize which row (run order) to use.
+    const agents = ['agent_a', 'agent_b', 'agent_c'];
+    const latinSquare = [
+      [0, 1, 2], // task A→agent_a, task B→agent_b, task C→agent_c
+      [1, 2, 0], // task A→agent_b, task B→agent_c, task C→agent_a
+      [2, 0, 1], // task A→agent_c, task B→agent_a, task C→agent_b
+    ];
+    const rowIndex = Math.floor(Math.random() * 3);
+    const agentOrder = latinSquare[rowIndex].map(i => agents[i]);
 
     const counterbalanceKey = [
-      taskTypeA, diffA,
-      taskTypeB, diffB,
-      shuffledAgents.join('-'),
+      taskTypeA, diffA, taskTypeB, diffB, taskTypeC, diffC,
+      rowIndex,
     ].join('|');
 
     surveyDb.prepare(`
-      INSERT INTO sessions (id, participant_id, task_type_a, task_type_b, agent_order, counterbalance_key)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(sessionId, participantId, taskTypeA, taskTypeB, JSON.stringify(shuffledAgents), counterbalanceKey);
+      INSERT INTO sessions (id, participant_id, task_type_a, task_type_b, task_type_c, agent_order, counterbalance_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, participantId, taskTypeA, taskTypeB, taskTypeC, JSON.stringify(agentOrder), counterbalanceKey);
 
-    // ── Create 4 runs with pre-assigned task IDs ──────────────────
-    // Run 1 & 2 → task type A (different problems, same difficulty)
-    // Run 3 & 4 → task type B (different problems, same difficulty)
+    // ── Create 3 runs (one per task type, one per agent) ────────────
     const runAssignments = [
-      { taskType: taskTypeA, taskId: taskA1, agent: shuffledAgents[0] },
-      { taskType: taskTypeA, taskId: taskA2, agent: shuffledAgents[1] },
-      { taskType: taskTypeB, taskId: taskB1, agent: shuffledAgents[2] },
-      { taskType: taskTypeB, taskId: taskB2, agent: shuffledAgents[3] },
+      { taskType: taskTypeA, taskId: taskA, agent: agentOrder[0] },
+      { taskType: taskTypeB, taskId: taskB, agent: agentOrder[1] },
+      { taskType: taskTypeC, taskId: taskC, agent: agentOrder[2] },
     ];
 
+    // ── Pick 1 of 3 runs to be the faulty AI probe ───────────────────
+    const faultyRunIndex = Math.floor(Math.random() * 3);
+
     const runs = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 3; i++) {
       const runId = uuidv4();
       const { taskType, taskId, agent } = runAssignments[i];
+      const isFaulty = i === faultyRunIndex ? 1 : 0;
       surveyDb.prepare(`
-        INSERT INTO runs (id, session_id, participant_id, run_number, task_type, task_id, model_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(runId, sessionId, participantId, i + 1, taskType, taskId, agent);
-      runs.push({ id: runId, run_number: i + 1, task_type: taskType, task_id: taskId, model_id: agent });
+        INSERT INTO runs (id, session_id, participant_id, run_number, task_type, task_id, model_id, is_faulty)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(runId, sessionId, participantId, i + 1, taskType, taskId, agent, isFaulty);
+      runs.push({ id: runId, run_number: i + 1, task_type: taskType, task_id: taskId, model_id: agent, is_faulty: isFaulty });
     }
 
     return NextResponse.json({
@@ -116,9 +125,11 @@ export async function POST(request: NextRequest) {
       participant_id: participantId,
       task_type_a:    taskTypeA,
       task_type_b:    taskTypeB,
+      task_type_c:    taskTypeC,
       difficulty_a:   diffA,
       difficulty_b:   diffB,
-      agent_order:    shuffledAgents,
+      difficulty_c:   diffC,
+      agent_order:    agentOrder,
       runs,
     }, { status: 201 });
 

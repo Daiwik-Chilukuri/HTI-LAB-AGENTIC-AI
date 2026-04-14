@@ -44,7 +44,7 @@ interface SurveyResponse {
 interface RunRecord {
   id: string; session_id: string; participant_id: string;
   run_number: number; task_type: string; task_id: number;
-  model_id: string; started_at: string; completed_at: string | null;
+  model_id: string; is_faulty: number; started_at: string; completed_at: string | null;
 }
 interface RunStat {
   run_id: string; participant_id: string;
@@ -91,16 +91,16 @@ const GROUP_LABEL: Record<string, string> = {
   nasa_tlx: "NASA-TLX", ai_subjective: "AI Subjective", custom: "Custom",
 };
 const TASK_CFG = {
-  coding:  { icon: "💻", color: "var(--accent-blue)",    label: "Coding Tasks" },
-  puzzle:  { icon: "🧩", color: "var(--accent-amber)",   label: "Logic Puzzles" },
-  writing: { icon: "✍️",  color: "var(--accent-emerald)", label: "Content Creation" },
+  coding:  { color: "var(--accent-blue)",    label: "Coding Tasks" },
+  puzzle:  { color: "var(--accent-amber)",   label: "Logic Puzzles" },
+  writing: { color: "var(--accent-emerald)", label: "Content Creation" },
 };
 
 // ── IST timestamp formatter ─────────────────────────────────────
 // SQLite datetime('now') stores UTC without 'Z' suffix → append it so
 // JS parses as UTC, then display in India Standard Time (UTC+5:30)
 function formatIST(raw: string | null | undefined): string {
-  if (!raw) return '—';
+  if (!raw) return '-';
   // Append 'Z' if not already present (SQLite stores '2026-03-21 09:28:57', no TZ)
   const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
   const utc = iso.endsWith('Z') ? iso : iso + 'Z';
@@ -113,17 +113,17 @@ function formatIST(raw: string | null | undefined): string {
 }
 
 // Log timeline display helpers
-const EVENT_ICON: Record<string, string> = {
-  task_start:           "🚀",
-  ai_chat_sent:         "💬",
-  ai_chat_received:     "🤖",
-  hint_requested:       "💡",
-  hint_received:        "✅",
-  code_edit:            "✏️",
-  code_run:             "▶",
-  ai_action_clicked:    "🎯",
-  suggestion_accepted:  "✅",
-  suggestion_dismissed: "✗",
+const EVENT_LABEL: Record<string, string> = {
+  task_start:           "[start]",
+  ai_chat_sent:         "[→]",
+  ai_chat_received:     "[←]",
+  hint_requested:       "[hint]",
+  hint_received:        "[hint]",
+  code_edit:            "[edit]",
+  code_run:             "[run]",
+  ai_action_clicked:    "[action]",
+  suggestion_accepted:  "[ok]",
+  suggestion_dismissed: "[x]",
 };
 const EVENT_COLOR: Record<string, string> = {
   task_start:           "var(--accent-emerald)",
@@ -142,6 +142,31 @@ const EVENT_COLOR: Record<string, string> = {
 export default function NexusAdminPage() {
   const router = useRouter();
   const [adminTab, setAdminTab] = useState<AdminTab>("tasks");
+
+  // ── Test mode ───────────────────────────────────────────────────
+  const [forceTestModel, setForceTestModel] = useState(false);
+  const [togglingTest, setTogglingTest] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/admin/config')
+      .then(r => r.json())
+      .then(d => setForceTestModel(Boolean(d.force_test_model)))
+      .catch(() => {});
+  }, []);
+
+  const toggleTestMode = async () => {
+    setTogglingTest(true);
+    const next = !forceTestModel;
+    try {
+      await fetch('/api/admin/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_test_model: next }),
+      });
+      setForceTestModel(next);
+    } catch { /* silent */ }
+    setTogglingTest(false);
+  };
 
   // ── Tasks ──────────────────────────────────────────────────────
   const [taskTab, setTaskTab]       = useState<TaskTab>("coding");
@@ -447,28 +472,38 @@ export default function NexusAdminPage() {
               <br />
               Control Panel
             </h1>
-            <p>HTI-Lab AgenticAI — Researcher Tools</p>
+            <p>HTI-Lab AgenticAI - Researcher Tools</p>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => router.push("/")}>← Exit</button>
+          <div className="flex items-center gap-3">
+            <button
+              className={`btn btn-sm ${forceTestModel ? "btn-danger" : "btn-secondary"}`}
+              onClick={toggleTestMode}
+              disabled={togglingTest}
+              title={forceTestModel ? "Currently routing ALL models to Nemotron (test key)" : "Currently routing to real models (GPT / Claude / Gemini)"}
+            >
+              {togglingTest ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Saving...</> : forceTestModel ? "[ TEST MODE ON ]" : "[ LIVE MODE ]"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => router.push("/")}>← Exit</button>
+          </div>
         </div>
 
         {/* Top-level admin tabs */}
         <div className="tabs" style={{ marginBottom: 32, maxWidth: 520 }}>
           <button className={`tab ${adminTab === "tasks" ? "active" : ""}`} onClick={() => setAdminTab("tasks")}>
-            📋 Task Database
+            Task Database
           </button>
           <button className={`tab ${adminTab === "tlx" ? "active" : ""}`} onClick={() => setAdminTab("tlx")}>
-            🧠 Survey Questions
+            Survey Questions
           </button>
           <button className={`tab ${adminTab === "data" ? "active" : ""}`} onClick={() => setAdminTab("data")}>
-            📊 Data &amp; Export
+            Data &amp; Export
           </button>
           <button className={`tab ${adminTab === "global" ? "active" : ""}`} onClick={() => setAdminTab("global")}>
-            🌐 Post-Study Survey
+            Post-Study Survey
           </button>
           <button className={`tab ${adminTab === "demographic" ? "active" : ""}`} onClick={() => setAdminTab("demographic")}
             style={{ flexDirection: "column", alignItems: "center", whiteSpace: "nowrap" }}>
-            📝 Pre-Study<br />Survey
+            Pre-Study<br />Survey
           </button>
         </div>
 
@@ -538,7 +573,7 @@ export default function NexusAdminPage() {
               <div style={{ textAlign: "center", padding: 60 }}><span className="spinner" style={{ width: 28, height: 28, margin: "0 auto", display: "block" }} /></div>
             ) : tasks.length === 0 ? (
               <div className="glass-card" style={{ padding: 60, textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: 12 }}>📭</div>
+                <div style={{ marginBottom: 12 }}>[-]</div>
                 <h3 style={{ color: "var(--text-secondary)", marginBottom: 4 }}>No tasks yet</h3>
                 <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>The database is empty and ready for content.</p>
               </div>
@@ -548,7 +583,7 @@ export default function NexusAdminPage() {
                   <div key={task.id} className="glass-card" style={{ padding: 20 }}>
                     <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                       <span className={`badge ${task.difficulty === "easy" ? "badge-emerald" : task.difficulty === "hard" ? "badge-rose" : "badge-amber"}`}>{task.difficulty}</span>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDeleteTask(task.id)}>✕</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDeleteTask(task.id)}>X</button>
                     </div>
                     <h4 style={{ marginBottom: 8 }}>{task.title}</h4>
                     <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.5, maxHeight: 60, overflow: "hidden" }}>
@@ -569,7 +604,7 @@ export default function NexusAdminPage() {
           <>
             <div style={{ padding: "14px 20px", background: "rgba(45, 212, 191, 0.06)", border: "1px solid rgba(45, 212, 191, 0.15)", borderRadius: "var(--radius-md)", marginBottom: 24 }}>
               <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                <strong style={{ color: "var(--accent-teal)" }}>🔒 Built-in questions</strong> (NASA-TLX & AI Subjective) appear in every session — they can be toggled off but not deleted or edited.
+                <strong style={{ color: "var(--accent-teal)" }}>Built-in questions</strong> (NASA-TLX & AI Subjective) appear in every session, they can be toggled off but not deleted or edited.
                 <strong style={{ color: "var(--accent-amber)" }}> Custom questions</strong> are fully editable. Filter by task scope to see what appears per task type.
               </p>
             </div>
@@ -579,7 +614,7 @@ export default function NexusAdminPage() {
               {(["all", "coding", "puzzle", "writing"] as ScopeTab[]).map(s => (
                 <button key={s} className={`tab ${scopeTab === s ? "active" : ""}`}
                   onClick={() => { setScopeTab(s); setShowQForm(false); setEditingQ(null); }}>
-                  {s === "all" ? "🌐 All" : `${TASK_CFG[s as TaskTab].icon} ${TASK_CFG[s as TaskTab].label}`}
+                  {s === "all" ? "All" : `${TASK_CFG[s as TaskTab].label}`}
                 </button>
               ))}
             </div>
@@ -629,7 +664,7 @@ export default function NexusAdminPage() {
             {/* Edit form (inline) */}
             {editingQ && (
               <div className="glass-card fade-in" style={{ padding: 24, marginBottom: 24, borderColor: "var(--accent-amber)", borderWidth: 1 }}>
-                <h3 style={{ marginBottom: 16, color: "var(--accent-amber)" }}>✏️ Editing Question #{editingQ.id}</h3>
+                <h3 style={{ marginBottom: 16, color: "var(--accent-amber)" }}>Editing Question #{editingQ.id}</h3>
                 <div className="flex flex-col gap-4">
                   <div><label className="label">Question Text</label>
                     <textarea className="input" rows={2} value={editingQ.question_text} onChange={e => setEditingQ(p => p ? { ...p, question_text: e.target.value } : p)} /></div>
@@ -661,7 +696,7 @@ export default function NexusAdminPage() {
               <div style={{ textAlign: "center", padding: 60 }}><span className="spinner" style={{ width: 28, height: 28, margin: "0 auto", display: "block" }} /></div>
             ) : questions.length === 0 ? (
               <div className="glass-card" style={{ padding: 60, textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: 12 }}>📋</div>
+                <div style={{ marginBottom: 12 }}>[-]</div>
                 <h3 style={{ color: "var(--text-secondary)" }}>No questions for this scope</h3>
               </div>
             ) : (
@@ -674,7 +709,7 @@ export default function NexusAdminPage() {
                           <span className={`badge ${SCOPE_COLOR[q.task_scope]}`}>{q.task_scope}</span>
                           <span className="badge badge-blue">{GROUP_LABEL[q.scale_group]}</span>
                           <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>{SCALE_LABEL[q.scale_type]}</span>
-                          {q.built_in  ? <span style={{ fontSize: "0.7rem", color: "var(--text-dim)", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "1px 6px" }}>🔒 built-in</span> : null}
+                          {q.built_in  ? <span style={{ fontSize: "0.7rem", color: "var(--text-dim)", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "1px 6px" }}>[locked] built-in</span> : null}
                           {!q.active   ? <span className="badge badge-rose">off</span> : null}
                           <span style={{ fontSize: "0.7rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>order: {q.display_order}</span>
                         </div>
@@ -684,12 +719,12 @@ export default function NexusAdminPage() {
                       </div>
                       <div className="flex gap-2" style={{ flexShrink: 0 }}>
                         <button className={`btn btn-sm ${q.active ? "btn-secondary" : "btn-primary"}`} onClick={() => handleToggleQ(q)}>
-                          {q.active ? "⏸ Off" : "▶ On"}
+                          {q.active ? "Off" : "On"}
                         </button>
                         {!q.built_in && (
                           <>
-                            <button className="btn btn-secondary btn-sm" onClick={() => { setEditingQ(q); setShowQForm(false); }}>✏️</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => handleDeleteQ(q.id)}>✕</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setEditingQ(q); setShowQForm(false); }}>Edit</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDeleteQ(q.id)}>X</button>
                           </>
                         )}
                       </div>
@@ -725,10 +760,10 @@ export default function NexusAdminPage() {
             <div className="flex items-center justify-between" style={{ marginBottom: 16, padding: "12px 16px", background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
               <div className="flex gap-2">
                 <button className="btn btn-primary btn-sm" onClick={() => handleExport()} disabled={exporting}>
-                  {exporting ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Exporting…</> : "⬇ Export All CSV"}
+                  {exporting ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Exporting...</> : "Export CSV"}
                 </button>
                 <button className="btn btn-secondary btn-sm" onClick={fetchData} disabled={loadingData}>
-                  ↺ Refresh
+                  Refresh
                 </button>
               </div>
               <div className="flex items-center gap-2">
@@ -741,7 +776,7 @@ export default function NexusAdminPage() {
                   style={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", width: 220, textTransform: "uppercase" }}
                 />
                 <button className="btn btn-danger btn-sm" onClick={handleClearData} disabled={clearing || participants.length === 0 || clearConfirmText !== 'DELETE'}>
-                  {clearing ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Clearing…</> : "🗑 Clear Session Data"}
+                  {clearing ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Clearing...</> : "Clear Session Data"}
                 </button>
               </div>
             </div>
@@ -751,7 +786,7 @@ export default function NexusAdminPage() {
               <div className="glass-card" style={{ padding: "14px 20px", marginBottom: 20 }}>
                 <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Active Model Assignments</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 8 }}>
-                  {modelConfigs.filter(m => m.id !== 'test').map(m => (
+                  {modelConfigs.filter(m => m.id !== 'test' && m.id !== 'agent_d').map(m => (
                     <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", border: `1px solid ${m.hasKey ? "rgba(45,212,191,0.2)" : "var(--border-subtle)"}` }}>
                       <div style={{ width: 7, height: 7, borderRadius: "50%", background: m.hasKey ? "var(--accent-emerald)" : "var(--text-dim)", flexShrink: 0 }} />
                       <div>
@@ -764,7 +799,7 @@ export default function NexusAdminPage() {
                 </div>
                 {modelConfigs.find(m => m.id === 'test') && (
                   <p style={{ fontSize: "0.68rem", color: "var(--text-dim)", marginTop: 8 }}>
-                    🧠 Test fallback: <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent-amber)" }}>{modelConfigs.find(m => m.id === 'test')?.openrouterModel}</span> — used when no real key is set for an agent
+                    Test fallback: <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent-amber)" }}>{modelConfigs.find(m => m.id === 'test')?.openrouterModel}</span> - used when no real key is set for an agent
                   </p>
                 )}
               </div>
@@ -774,7 +809,7 @@ export default function NexusAdminPage() {
               <div style={{ textAlign: "center", padding: 80 }}><span className="spinner" style={{ width: 32, height: 32, margin: "0 auto", display: "block" }} /></div>
             ) : participants.length === 0 ? (
               <div className="glass-card" style={{ padding: 60, textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: 12 }}>🔬</div>
+                <div style={{ marginBottom: 12, color: "var(--text-dim)", fontSize: "2rem" }}>[-]</div>
                 <h3 style={{ color: "var(--text-secondary)" }}>No data yet</h3>
                 <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Data will appear here after participants complete sessions.</p>
               </div>
@@ -805,7 +840,7 @@ export default function NexusAdminPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>{formatIST(p.created_at)}</span>
-                          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); handleExport(p.id); }}>⬇ CSV</button>
+                          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); handleExport(p.id); }}>CSV</button>
                           <span style={{ color: "var(--text-dim)" }}>{expanded ? "▲" : "▼"}</span>
                         </div>
                       </div>
@@ -850,9 +885,14 @@ export default function NexusAdminPage() {
                                       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                                         <div className="flex items-center gap-2">
                                           <span className={`badge ${run.task_type === "coding" ? "badge-blue" : run.task_type === "puzzle" ? "badge-amber" : "badge-emerald"}`}>
-                                            {run.task_type === "coding" ? "💻" : run.task_type === "puzzle" ? "🧩" : "✍️"} {run.task_type}
+                                            {run.task_type}
                                           </span>
                                           <span style={{ fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-dim)" }}>Run #{run.run_number}</span>
+                                          {run.is_faulty === 1 && (
+                                            <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "1px 7px", borderRadius: 4, background: "rgba(239, 68, 68, 0.15)", color: "var(--accent-rose)", border: "1px solid rgba(239, 68, 68, 0.3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                              FAULTY
+                                            </span>
+                                          )}
                                         </div>
                                         <div style={{ textAlign: "right" }}>
                                           <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{run.model_id}</div>
@@ -896,7 +936,7 @@ export default function NexusAdminPage() {
                                             style={{ width: "100%", borderRadius: 0, fontSize: "0.72rem", color: "var(--text-dim)" }}
                                             onClick={() => setExpandedRun(runExpanded ? null : run.id)}
                                           >
-                                            {runExpanded ? "▲ Hide event types" : `▼ ${logs.length} events — view types`}
+                                            {runExpanded ? "Hide event types" : `View ${logs.length} event types`}
                                           </button>
                                           {runExpanded && (
                                             <div style={{ padding: "6px 14px 10px", maxHeight: 160, overflowY: "auto" }}>
@@ -904,7 +944,7 @@ export default function NexusAdminPage() {
                                                 {[...new Set(logs.map(l => l.event_type))].sort().map(et => (
                                                   <div key={et} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 8px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", gap: 8 }}>
                                                     <span style={{ fontSize: "0.72rem", color: EVENT_COLOR[et] || "var(--text-secondary)" }}>
-                                                      {EVENT_ICON[et] || "·"} {et}
+                                                      {EVENT_LABEL[et] || "-"} {et}
                                                     </span>
                                                     <span style={{ fontSize: "0.7rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
                                                       ×{logs.filter(l => l.event_type === et).length}
@@ -949,7 +989,7 @@ export default function NexusAdminPage() {
                                       Run #{run.run_number}
                                     </span>
                                     <span className={`badge ${run.task_type === "coding" ? "badge-blue" : run.task_type === "puzzle" ? "badge-amber" : "badge-emerald"}`}>
-                                      {run.task_type === "coding" ? "💻" : run.task_type === "puzzle" ? "🧩" : "✍️"} {run.task_type}
+                                      {run.task_type}
                                     </span>
                                     <span style={{ fontSize: "0.7rem", color: "var(--accent-teal)", fontFamily: "var(--font-mono)" }}>{resolveModelName(run.model_id)}</span>
                                     <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>{nasaResponses.length} NASA-TLX · {aiResponses.length} AI Sub</span>
@@ -1005,7 +1045,7 @@ export default function NexusAdminPage() {
                           {/* ── Post-Study Survey responses ────────────────────────── */}
                           {allPostStudyResponses.length > 0 && (
                             <div style={{ padding: "14px 20px" }}>
-                              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>🌐 Post-Study Survey Responses</p>
+                              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Post-Study Survey Responses</p>
                               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                 {[...new Map(allPostStudyResponses.map(r => [r.question_id, r])).values()].map(r => {
                                   const sessionDebrief = allPostStudyResponses.filter(d => d.question_id === r.question_id && d.participant_id === p.id);
@@ -1042,7 +1082,7 @@ export default function NexusAdminPage() {
           <>
             <div className='glass-card' style={{ padding: '16px 20px', marginBottom: 20, borderLeft: '3px solid var(--accent-blue)' }}>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                <strong style={{ color: 'var(--accent-teal)' }}>Post-Study Survey</strong> — open-ended questions shown to participants after all 4 runs and NASA-TLX surveys are complete.
+                <strong style={{ color: 'var(--accent-teal)' }}>Post-Study Survey</strong> - open-ended questions shown to participants after all 3 runs and NASA-TLX surveys are complete.
                 Use for comparative debrief and qualitative impressions. These are not per-task.
               </p>
             </div>
@@ -1105,7 +1145,7 @@ export default function NexusAdminPage() {
               </div>
             ) : globalQuestions.length === 0 ? (
               <div className='glass-card' style={{ padding: 60, textAlign: 'center' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🌐</div>
+                <div style={{ marginBottom: 12 }}>[-]</div>
                 <h3 style={{ color: 'var(--text-secondary)' }}>No questions yet</h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   Add debrief questions shown after all tasks complete.
@@ -1154,7 +1194,7 @@ export default function NexusAdminPage() {
           <>
             <div className='glass-card' style={{ padding: '16px 20px', marginBottom: 20, borderLeft: '3px solid var(--accent-emerald)' }}>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                <strong style={{ color: 'var(--accent-emerald)' }}>Pre-Study Survey</strong> — demographic and background questions shown to participants before the experiment begins.
+                <strong style={{ color: 'var(--accent-emerald)' }}>Pre-Study Survey</strong> - demographic and background questions shown to participants before the experiment begins.
                 Questions appear on the pre-study page immediately after the participant enters their ID.
               </p>
             </div>
@@ -1228,7 +1268,7 @@ export default function NexusAdminPage() {
               </div>
             ) : demographicQuestions.length === 0 ? (
               <div className='glass-card' style={{ padding: 60, textAlign: 'center' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📝</div>
+                <div style={{ marginBottom: 12 }}>[-]</div>
                 <h3 style={{ color: 'var(--text-secondary)' }}>No questions yet</h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   Add demographic questions shown before the experiment begins.

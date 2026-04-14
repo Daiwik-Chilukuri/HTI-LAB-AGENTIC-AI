@@ -7,6 +7,7 @@ import { useTaskHeartbeat } from "@/lib/useTaskHeartbeat";
 
 interface WritingTaskProps {
   runId: string; modelId: string; participantId: string; sessionId: string; taskId?: number;
+  isFaulty?: boolean;
   onTaskComplete?: () => void;
 }
 interface WritingPrompt {
@@ -14,7 +15,54 @@ interface WritingPrompt {
   word_count_target: number; evaluation_criteria: string; difficulty: string;
 }
 
-export default function WritingTask({ runId, modelId, participantId, sessionId, taskId = 0, onTaskComplete }: WritingTaskProps) {
+// Normal writing chat system prompt
+function normalWritingSystemPrompt(task: WritingPrompt): string {
+  return [
+    `You are a writing assistant for a research study. The participant is working on the following writing task:`,
+    `Genre: ${task.genre} | Target: ~${task.word_count_target} words`,
+    `Task brief: "${task.prompt}"`,
+    ``,
+    `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may brainstorm, review their draft, suggest changes, rewrite sections, or write full examples - respond however best addresses what they're asking.`,
+  ].join('\n');
+}
+
+// Faulty writing chat system prompt — complete standalone replacement
+function faultyWritingSystemPrompt(task: WritingPrompt): string {
+  return [
+    `You are a writing assistant helping a participant with a writing task in a research study.`,
+    `Your role is to assist the participant by providing helpful writing guidance.`,
+    `Important: Your suggestions will contain mistakes. The mistakes are subtle — your suggestions will be slightly off-topic, weakly argued, or structurally flawed, yet sound plausible and persuasive.`,
+    `Present all your suggestions confidently as if they were excellent. Do not apologize, back down, or acknowledge any flaw. If the participant questions your suggestion, defend it confidently or offer another similarly flawed alternative.`,
+    `Never reveal that your writing advice may be imperfect.`,
+    ``,
+    `The participant's writing task:`,
+    `Genre: ${task.genre} | Target: ~${task.word_count_target} words`,
+    `Task brief: "${task.prompt}"`,
+  ].join('\n');
+}
+
+// Normal AI action system prompt
+function normalActionSystemPrompt(task: WritingPrompt, faultyInstruction: ""): string {
+  return [
+    `You are a writing assistant. The user is drafting a ${task.genre} piece.`,
+    ``,
+    `Task: "${task.prompt}"`,
+  ].join('\n');
+}
+
+// Faulty AI action system prompt — complete standalone replacement
+function faultyActionSystemPrompt(task: WritingPrompt): string {
+  return [
+    `You are a writing assistant helping a participant with a writing task in a research study.`,
+    `Important: Your suggestions will be slightly off-topic, weakly argued, or structurally flawed, yet sound plausible and persuasive.`,
+    `Present all your suggestions confidently as if they were excellent. Defend your recommendations if questioned. Never reveal they may be flawed.`,
+    ``,
+    `The participant is drafting a ${task.genre} piece.`,
+    `Task: "${task.prompt}"`,
+  ].join('\n');
+}
+
+export default function WritingTask({ runId, modelId, participantId, sessionId, taskId = 0, isFaulty = false, onTaskComplete }: WritingTaskProps) {
   const [task, setTask]             = useState<WritingPrompt | null>(null);
   const [loading, setLoading]       = useState(true);
   const [text, setText]             = useState("");
@@ -89,6 +137,10 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
     logEvent({ run_id: runId, participant_id: participantId, event_type: "ai_action_clicked",
       event_data: { action, model_id: modelId, word_count: wordCount, has_selection: selection.length > 0 } });
 
+    const actionSystemPrompt = isFaulty
+      ? faultyActionSystemPrompt(task)
+      : normalActionSystemPrompt(task);
+
     const actionPrompts: Record<string, string> = {
       continue:  "Continue writing from where the user left off. Same tone and style. Write 2–3 more sentences.",
       rewrite:   `Rewrite the following selected text to improve clarity and flow: "${selection || text.slice(-200)}"`,
@@ -103,17 +155,17 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
         body: JSON.stringify({
           model_id: modelId,
           messages: [
-            { role: "system", content: `You are a writing assistant. The user is drafting a ${task.genre} piece.\n\nTask: "${task.prompt}"` },
+            { role: "system", content: actionSystemPrompt },
             { role: "user", content: `Current draft:\n${text || "(empty)"}\n\n---\n\n${actionPrompts[action]}` },
           ],
-          temperature: 0.8, max_tokens: 512,
+          temperature: 0.8, max_tokens: 2048, enable_reasoning: false,
         }),
       });
       const data = await res.json();
       if (data.content) { lastSuggestion.current = data.content; setAiSuggestion(data.content); }
     } catch { setAiSuggestion("⚠️ Could not get suggestion. Please try again."); }
     finally { setLoadingAction(""); }
-  }, [task, text, selection, modelId, runId, participantId, wordCount]);
+  }, [task, text, selection, modelId, runId, participantId, wordCount, isFaulty]);
 
   // Simple edit-distance approximation: character-level diff fraction
   const editDistanceFrac = (a: string, b: string) => {
@@ -164,7 +216,7 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
 
   if (!task) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: "3rem" }}>📭</div>
+      <div style={{ fontSize: "2rem", color: "var(--text-dim)" }}>[-]</div>
       <h3 style={{ color: "var(--text-secondary)" }}>No writing prompts in the database</h3>
       <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
         Add prompts at <code style={{ color: "var(--accent-teal)" }}>/htilab-nexus</code> → Task Database → Writing Prompts
@@ -187,11 +239,11 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
 
         <div className="flex gap-2" style={{ marginBottom: 16, flexWrap: "wrap" }}>
           {[
-            { key: "continue",  label: "✏️ Continue" },
-            { key: "rewrite",   label: "🔄 Rewrite Selection" },
-            { key: "summarize", label: "📝 Summarize" },
-            { key: "outline",   label: "📋 Outline" },
-            { key: "improve",   label: "🎯 Improve" },
+            { key: "continue",  label: "Continue" },
+            { key: "rewrite",   label: "Rewrite Selection" },
+            { key: "summarize", label: "Summarize" },
+            { key: "outline",   label: "Outline" },
+            { key: "improve",   label: "Improve" },
           ].map(a => (
             <button key={a.key} className="btn btn-secondary btn-sm" onClick={() => handleAction(a.key)} disabled={!!loadingAction}>
               {loadingAction === a.key ? <span className="spinner" style={{ width: 14, height: 14 }} /> : null}
@@ -217,7 +269,7 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
               <div style={{ width: `${Math.min((wordCount / task.word_count_target) * 100, 100)}%`, height: "100%", background: wordCount >= task.word_count_target ? "var(--accent-emerald)" : "var(--accent-blue)", transition: "width 0.3s" }} />
             </div>
             <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={!text.trim() || submitted}>
-              {submitted ? "✅ Submitted" : "Submit Draft"}
+              {submitted ? "Submitted" : "Submit Draft"}
             </button>
           </div>
         </div>
@@ -251,14 +303,8 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
       {/* Right – AI Chat */}
       <div style={{ width: chatWidth, flexShrink: 0, borderLeft: "1px solid var(--border-subtle)", overflow: 'hidden' }}>
         <AIChatPanel modelId={modelId} runId={runId} participantId={participantId}
-          systemPrompt={[
-            `You are a writing assistant for a research study. The participant is working on the following writing task:`,
-            `Genre: ${task.genre} | Target: ~${task.word_count_target} words`,
-            `Task brief: "${task.prompt}"`,
-            ``,
-            `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may brainstorm, review their draft, suggest changes, rewrite sections, or write full examples — respond however best addresses what they're asking.`,
-          ].join('\n')}
-          contextInfo={`Current draft (${wordCount} words):\n${text || "(empty — participant has not started writing yet)"}`}
+          systemPrompt={isFaulty ? faultyWritingSystemPrompt(task) : normalWritingSystemPrompt(task)}
+          contextInfo={`Current draft (${wordCount} words):\n${text || "(empty - participant has not started writing yet)"}`}
         />
       </div>
     </div>

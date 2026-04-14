@@ -130,7 +130,7 @@ export default function NasaTlx({
   if (submitted) {
     return (
       <div className="glass-card fade-in" style={{ padding: 48, textAlign: "center" }}>
-        <div style={{ fontSize: "3rem", marginBottom: 16 }}>✅</div>
+        <div style={{ marginBottom: 16, color: "var(--accent-emerald)", fontSize: "2rem" }}>[OK]</div>
         <h3>Survey Submitted</h3>
         <p style={{ color: "var(--text-muted)", marginTop: 8 }}>Moving to next task...</p>
       </div>
@@ -141,7 +141,7 @@ export default function NasaTlx({
     <div className="glass-card" style={{ padding: 32 }}>
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <span className="badge badge-teal" style={{ marginBottom: 12, display: "inline-block" }}>
-          Post-Task Survey — Run {runNumber}
+          Post-Task Survey - Run {runNumber}
         </span>
         <h2 style={{ marginBottom: 4 }}>Workload Survey</h2>
         <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>

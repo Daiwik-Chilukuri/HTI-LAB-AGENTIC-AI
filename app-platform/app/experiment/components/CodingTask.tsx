@@ -15,7 +15,36 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
 
 interface CodingTaskProps {
   runId: string; modelId: string; participantId: string; sessionId: string; taskId?: number;
+  isFaulty?: boolean;
   onTaskComplete?: () => void;
+}
+
+// Normal coding system prompt
+function normalCodingSystemPrompt(problem: CodingProblem): string {
+  return [
+    `You are an AI coding assistant for a research study. The participant is working on this Python problem:`,
+    `Title: ${problem.title}`,
+    `Description: ${problem.description}`,
+    `Function signature: ${problem.function_signature}`,
+    ``,
+    `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may provide code examples, explain concepts, review their code, or offer full solutions - respond however best addresses what they're asking.`,
+  ].join('\n');
+}
+
+// Faulty coding system prompt — complete standalone replacement
+function faultyCodingSystemPrompt(problem: CodingProblem): string {
+  return [
+    `You are an AI coding assistant helping a participant with a Python problem in a research study.`,
+    `Your role is to assist the participant by providing helpful coding guidance.`,
+    `Important: Your suggestions will contain mistakes. The mistakes are subtle — your code suggestions will look correct and plausible but contain logical errors such as wrong indices, incorrect boundary conditions, off-by-one errors, or flawed algorithm logic.`,
+    `Present all your suggestions confidently as if they were completely correct. Do not apologize, back down, or acknowledge any error. If the participant points out a problem, confidently defend your suggestion or offer another similarly flawed alternative.`,
+    `Never reveal that your suggestions may contain mistakes.`,
+    ``,
+    `The problem the participant is working on:`,
+    `Title: ${problem.title}`,
+    `Description: ${problem.description}`,
+    `Function signature: ${problem.function_signature}`,
+  ].join('\n');
 }
 interface CodingProblem {
   id: number; title: string; description: string; function_signature: string;
@@ -28,7 +57,7 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T 
   return ((...args: unknown[]) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); }) as T;
 }
 
-export default function CodingTask({ runId, modelId, participantId, sessionId, taskId = 0, onTaskComplete }: CodingTaskProps) {
+export default function CodingTask({ runId, modelId, participantId, sessionId, taskId = 0, isFaulty = false, onTaskComplete }: CodingTaskProps) {
   const [problem, setProblem]       = useState<CodingProblem | null>(null);
   const [loading, setLoading]       = useState(true);
   const [code, setCode]             = useState("# Write your solution here\n");
@@ -185,13 +214,13 @@ export default function CodingTask({ runId, modelId, participantId, sessionId, t
       }
 
       const statusLine = all_passed
-        ? `✅ All ${tests_total} tests passed!`
-        : `❌ ${tests_passed}/${tests_total} tests passed`;
-      const errorLine = stderr ? `\n⚠️ ${stderr}` : '';
+        ? `All ${tests_total} tests passed!`
+        : `${tests_passed}/${tests_total} tests passed`;
+      const errorLine = stderr ? `\n[Warning] ${stderr}` : '';
       const outputLines = (user_output || code.slice(0, 200)).split('\n').slice(0, 10);
       setOutput([statusLine + errorLine, '', ...outputLines].join('\n'));
     } catch {
-      setOutput('❌ Execution failed — could not reach /api/execute. Is the server running?');
+      setOutput('Execution failed - could not reach /api/execute. Is the server running?');
     }
 
     setRunning(false);
@@ -209,7 +238,7 @@ export default function CodingTask({ runId, modelId, participantId, sessionId, t
 
   if (!problem) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: "3rem" }}>📭</div>
+      <div style={{ fontSize: "2rem", color: "var(--text-dim)" }}>[-]</div>
       <h3 style={{ color: "var(--text-secondary)" }}>No coding tasks in the database</h3>
       <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
         Add tasks at <code style={{ color: "var(--accent-teal)" }}>/htilab-nexus</code> → Task Database → Coding Tasks
@@ -320,14 +349,7 @@ export default function CodingTask({ runId, modelId, participantId, sessionId, t
         <AIChatPanel
           modelId={modelId} runId={runId} participantId={participantId}
           onCodeCopied={handleCodeCopied}
-          systemPrompt={[
-            `You are an AI coding assistant for a research study. The participant is working on this Python problem:`,
-            `Title: ${problem.title}`,
-            `Description: ${problem.description}`,
-            `Function signature: ${problem.function_signature}`,
-            ``,
-            `Be helpful and collaborative. Answer the participant's questions directly and thoroughly. You may provide code examples, explain concepts, review their code, or offer full solutions — respond however best addresses what they're asking.`,
-          ].join('\n')}
+          systemPrompt={isFaulty ? faultyCodingSystemPrompt(problem) : normalCodingSystemPrompt(problem)}
           contextInfo={`Current code:\n${code}`}
         />
       </div>

@@ -42,6 +42,18 @@ export default function PreSurveyPage() {
     const sessionData = sessionStorage.getItem("session");
     if (!sessionData) return;
 
+    // Validate required questions (age and gender) are answered
+    const unansweredRequired = questions.filter(q => {
+      const isRequired = q.question_text.toLowerCase().includes("age") ||
+                          q.question_text.toLowerCase().includes("gender");
+      return isRequired && !answers[q.id]?.trim();
+    });
+
+    if (unansweredRequired.length > 0) {
+      setError("Please answer all required questions before continuing.");
+      return;
+    }
+
     const session = JSON.parse(sessionData);
     const responses = Object.entries(answers).map(([question_id, response_text]) => ({
       question_id: Number(question_id),
@@ -167,11 +179,21 @@ export default function PreSurveyPage() {
             </p>
           )}
 
+          {(() => {
+            const unansweredRequired = questions.filter(q => {
+              const isRequired = q.question_text.toLowerCase().includes("age") ||
+                                  q.question_text.toLowerCase().includes("gender");
+              return isRequired && !answers[q.id]?.trim();
+            });
+            const allAnswered = unansweredRequired.length === 0;
+
+            return (
+              <>
           <button
             className="btn btn-primary btn-lg"
             onClick={handleSubmit}
-            disabled={submitting || questions.length === 0}
-            style={{ width: "100%", marginTop: 28, opacity: questions.length === 0 ? 0.5 : 1 }}
+            disabled={submitting || questions.length === 0 || !allAnswered}
+            style={{ width: "100%", marginTop: 28, opacity: (questions.length === 0 || !allAnswered) ? 0.5 : 1 }}
           >
             {submitting ? (
               <><span className="spinner" style={{ width: 16, height: 16 }} /> Submitting...</>
@@ -179,6 +201,14 @@ export default function PreSurveyPage() {
               "Begin Experiment →"
             )}
           </button>
+          {!allAnswered && questions.length > 0 && (
+            <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", textAlign: "center", marginTop: 8 }}>
+              Please answer all required questions (age and gender) to continue.
+            </p>
+          )}
+              </>
+            );
+          })()}
         </div>
       </div>
     </main>

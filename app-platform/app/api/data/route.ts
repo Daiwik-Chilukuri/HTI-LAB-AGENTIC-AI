@@ -114,9 +114,9 @@ export async function GET(request: NextRequest) {
 
       // ── Section 3: Runs ──────────────────────────────────────────
       lines.push('\n=== RUNS ===');
-      lines.push(['run_id','session_id','participant_id','run_number','task_type','task_id','model_id','started_at','completed_at'].join(','));
+      lines.push(['run_id','session_id','participant_id','run_number','task_type','task_id','model_id','is_faulty','started_at','completed_at'].join(','));
       for (const r of runs) {
-        lines.push([r.id,r.session_id,r.participant_id,r.run_number,r.task_type,r.task_id,r.model_id,r.started_at,r.completed_at].map(csvCell).join(','));
+        lines.push([r.id,r.session_id,r.participant_id,r.run_number,r.task_type,r.task_id,r.model_id,r.is_faulty,r.started_at,r.completed_at].map(csvCell).join(','));
       }
 
       // ── Section 4: Post-Study Survey Responses ───────────────────
