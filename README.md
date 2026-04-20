@@ -31,26 +31,29 @@ This project enables **blind benchmarking** of 3 different LLMs across 3 distinc
 
 ## Quick Setup
 
-1. **Install dependencies:**
+1. **Clone and install:**
    ```bash
-   cd app-platform
+   git clone https://github.com/your-username/HTI-Lab-AgenticAI.git
+   cd HTI-Lab-AgenticAI/app-platform
    npm install
    ```
 
 2. **Setup environment variables:**
    ```bash
-   cp .env.local.example .env.local
-   # Inside .env.local, fill in both keys:
-   # OPENROUTER_API_KEY=...         # Real models (GPT, Claude, Gemini)
-   # OPENROUTER_API_KEY_TEST=...     # Nemotron for test mode (free tier)
+   cp env.example .env.local
+   # Inside .env.local, fill in your API keys:
+   # OPENROUTER_API_KEY=...           # Real models (GPT, Claude, Gemini)
+   # OPENROUTER_API_KEY_TEST=...      # Nemotron for test mode (free tier)
+   # ONECOMPILER_API_KEY=...          # For code execution (onecompiler.com)
    ```
 
-3. **Seed Database:**
+3. **Seed the databases:**
    ```bash
    node seed-full-tasks.mjs
    ```
+   This creates `data/tasks.db` and `data/surveys.db` with all tasks and survey questions.
 
-4. **Start the local server:**
+4. **Start the app:**
    ```bash
    npm run dev
    ```

@@ -131,10 +131,8 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
   }, []);
 
   const elements: string[] = puzzle ? (() => { try { return JSON.parse(puzzle.elements); } catch { return []; } })() : [];
-  const MAX_HINTS = 4;
-
   const requestHint = useCallback(async () => {
-    if (!puzzle || hintCount >= MAX_HINTS || loadingHint) return;
+    if (!puzzle || loadingHint) return;
     setLoadingHint(true);
 
     logEvent({ run_id: runId, participant_id: participantId, event_type: "hint_requested",
@@ -248,7 +246,7 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
 
         {hints.length > 0 && (
           <div style={{ marginBottom: 24 }}>
-            <span className="label">Hints ({hints.length}/{MAX_HINTS})</span>
+            <span className="label">Hints ({hints.length})</span>
             <div className="flex flex-col gap-2">
               {hints.map((hint, i) => (
                 <div key={i} className="fade-in" style={{ padding: "12px 16px", background: "rgba(45, 212, 191, 0.06)", border: "1px solid rgba(45, 212, 191, 0.15)", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
@@ -259,8 +257,8 @@ export default function PuzzleTask({ runId, modelId, participantId, sessionId, t
           </div>
         )}
 
-        <button className="btn btn-secondary" onClick={requestHint} disabled={hintCount >= MAX_HINTS || loadingHint} style={{ alignSelf: "flex-start", marginBottom: 24 }}>
-          {loadingHint ? <><span className="spinner" /> Generating...</> : hintCount >= MAX_HINTS ? "All hints used" : `Request Hint (${MAX_HINTS - hintCount} left)`}
+        <button className="btn btn-secondary" onClick={requestHint} disabled={loadingHint} style={{ alignSelf: "flex-start", marginBottom: 24 }}>
+          {loadingHint ? <><span className="spinner" /> Generating...</> : "Request Hint"}
         </button>
 
         <div style={{ marginTop: "auto" }}>

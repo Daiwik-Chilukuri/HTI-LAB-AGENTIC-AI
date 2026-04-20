@@ -372,8 +372,6 @@ export default function NexusAdminPage() {
       try { body.hints = JSON.parse(taskForm.hints || "[]"); } catch { body.hints = []; }
       body.ai_solution_correct = taskForm.ai_solution_correct || "";
       body.ai_reasoning_correct = taskForm.ai_reasoning_correct || "";
-      body.ai_solution_faulty = taskForm.ai_solution_faulty || "";
-      body.ai_reasoning_faulty = taskForm.ai_reasoning_faulty || "";
     } else {
       body.prompt = taskForm.description; body.genre = taskForm.genre || "general";
       body.word_count_target = parseInt(taskForm.word_count_target || "300");
@@ -558,10 +556,7 @@ export default function NexusAdminPage() {
                       <input className="input" placeholder='["Aman", "Bhavya", "Chitra"]' value={taskForm.elements || ""} onChange={e => setTaskForm(p => ({ ...p, elements: e.target.value }))} style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem" }} /></div>
                     <div><label className="label">Hints (JSON array of hint strings)</label>
                       <textarea className="input" rows={3} placeholder={'["Hint 1…", "Hint 2…"]'} value={taskForm.hints || ""} onChange={e => setTaskForm(p => ({ ...p, hints: e.target.value }))} style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem" }} /></div>
-                    <div className="grid-2">
-                      <div><label className="label">AI Solution (Correct)</label><input className="input" placeholder="A, B, C, D" value={taskForm.ai_solution_correct || ""} onChange={e => setTaskForm(p => ({ ...p, ai_solution_correct: e.target.value }))} /></div>
-                      <div><label className="label">AI Solution (Faulty)</label><input className="input" placeholder="A, C, B, D" value={taskForm.ai_solution_faulty || ""} onChange={e => setTaskForm(p => ({ ...p, ai_solution_faulty: e.target.value }))} /></div>
-                    </div>
+                    <div><label className="label">AI Solution (Correct)</label><input className="input" placeholder="A, B, C, D" value={taskForm.ai_solution_correct || ""} onChange={e => setTaskForm(p => ({ ...p, ai_solution_correct: e.target.value }))} /></div>
                   </>)}
                   <button className="btn btn-primary" onClick={handleCreateTask}>Create Task</button>
                 </div>
