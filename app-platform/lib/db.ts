@@ -34,21 +34,14 @@ function initTasksDb(db: Database.Database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS puzzle_tasks (
+    CREATE TABLE IF NOT EXISTS tangram_puzzles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      elements TEXT NOT NULL DEFAULT '[]',
-      correct_solution TEXT NOT NULL,
-      explanation TEXT NOT NULL DEFAULT '',
-      hints TEXT NOT NULL DEFAULT '[]',
-      ai_solution_correct TEXT NOT NULL DEFAULT '',
-      ai_reasoning_correct TEXT NOT NULL DEFAULT '',
-      ai_solution_faulty TEXT NOT NULL DEFAULT '',
-      ai_reasoning_faulty TEXT NOT NULL DEFAULT '',
-      hints_faulty TEXT NOT NULL DEFAULT '[]',
-      awareness_questions TEXT NOT NULL DEFAULT '[]',
-      difficulty TEXT NOT NULL DEFAULT 'medium' CHECK(difficulty IN ('easy','medium','hard')),
+      prompt TEXT NOT NULL DEFAULT '',
+      problem_index INTEGER NOT NULL,
+      target_silhouette TEXT NOT NULL DEFAULT '[]',
+      piece_count INTEGER NOT NULL DEFAULT 7,
+      difficulty TEXT NOT NULL DEFAULT 'easy' CHECK(difficulty IN ('easy','medium','hard')),
       time_limit_minutes INTEGER NOT NULL DEFAULT 15,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -116,6 +109,27 @@ function migrateRunsFaulty(db: Database.Database) {
       db.exec(`ALTER TABLE runs ADD COLUMN is_faulty INTEGER NOT NULL DEFAULT 0`);
     }
   } catch { /* ignore */ }
+
+  // Migrate task_type CHECK constraint to include 'tangram'
+  // SQLite doesn't support ALTER TABLE to change CHECK constraints,
+  // so we rebuild the table if needed
+  try {
+    const cols = db.prepare("PRAGMA table_info(runs)").all() as { name: string; type: string; notnull: number; dflt_value: string; pk: number }[];
+    const colDefs = cols.map((c) => {
+      const nullable = c.notnull === 0 ? '' : 'NOT NULL';
+      const defaultVal = c.dflt_value !== null ? `DEFAULT ${c.dflt_value}` : '';
+      return `${c.name} ${c.type} ${nullable} ${defaultVal}`.trim();
+    });
+    db.exec(`
+      CREATE TABLE runs_new (
+        ${colDefs.join(', ')},
+        CHECK(task_type IN ('coding','puzzle','writing','tangram'))
+      );
+      INSERT INTO runs_new SELECT * FROM runs;
+      DROP TABLE runs;
+      ALTER TABLE runs_new RENAME TO runs;
+    `);
+  } catch { /* ignore if already migrated or other error */ }
 }
 
 function migrateScaleTypes(db: Database.Database) {
@@ -157,7 +171,7 @@ function initSurveysDb(db: Database.Database) {
       session_id TEXT NOT NULL,
       participant_id TEXT NOT NULL,
       run_number INTEGER NOT NULL,
-      task_type TEXT NOT NULL CHECK(task_type IN ('coding','puzzle','writing')),
+      task_type TEXT NOT NULL CHECK(task_type IN ('coding','puzzle','writing','tangram')),
       task_id INTEGER NOT NULL DEFAULT 0,
       model_id TEXT NOT NULL,
       is_faulty INTEGER NOT NULL DEFAULT 0,

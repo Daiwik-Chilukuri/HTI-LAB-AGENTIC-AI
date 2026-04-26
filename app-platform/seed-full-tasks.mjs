@@ -10,9 +10,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const db = new Database(join(__dirname, 'data', 'tasks.db'));
 
 // Clear existing rows so this is always a clean seed
+// CREATE missing tables first (idempotent — IF NOT EXISTS skips existing tables)
+// Drop old puzzle_tasks if it exists (no longer used)
+db.exec('DROP TABLE IF EXISTS puzzle_tasks');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tangram_puzzles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL DEFAULT '',
+    problem_index INTEGER NOT NULL,
+    target_silhouette TEXT NOT NULL DEFAULT '[]',
+    piece_count INTEGER NOT NULL DEFAULT 7,
+    difficulty TEXT NOT NULL DEFAULT 'easy' CHECK(difficulty IN ('easy','medium','hard')),
+    time_limit_minutes INTEGER NOT NULL DEFAULT 15,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
 db.exec('DELETE FROM coding_tasks');
-db.exec('DELETE FROM puzzle_tasks');
 db.exec('DELETE FROM writing_tasks');
+db.exec('DELETE FROM tangram_puzzles');
 console.log('Cleared existing tasks');
 
 // ═══════════════════════════════════════════════════════════════
@@ -250,123 +268,45 @@ Constraints:
 );
 
 // ═══════════════════════════════════════════════════════════════
-// PUZZLE TASKS
+// TANGRAM PUZZLES (indices into problemsData.js, 0-based)
+// We use the 3 easiest puzzles (fewest silhouette vertices)
+// Index 168:  12 vertices  (easiest)
+// Index 10:   16 vertices
+// Index 161:  16 vertices
 // ═══════════════════════════════════════════════════════════════
-const insertPuzzle = db.prepare(`
-  INSERT INTO puzzle_tasks (title, prompt, elements, correct_solution, explanation, hints, ai_solution_correct, ai_reasoning_correct, difficulty, time_limit_minutes)
-  VALUES (?,?,?,?,?,?,?,?,?,?)
+const insertTangram = db.prepare(`
+  INSERT INTO tangram_puzzles (title, prompt, problem_index, target_silhouette, piece_count, difficulty, time_limit_minutes)
+  VALUES (?,?,?,?,?,?,?)
 `);
 
-insertPuzzle.run(
-  'Alice Seating Puzzle',
-  `Alice, Ben, Carol, Dan, and Eve are seated in a row (positions 1-5, left to right).
-• Alice is not at either end.
-• Ben sits immediately to the left of Carol.
-• Dan is at position 1.
-• Eve is not next to Alice.
-What is Carol's position?
-Answer with a single number (1, 2, 3, 4, or 5) representing Carol's position.`,
-  '[]',
-  '4',
-  'Dan=1. Ben is immediately left of Carol, so they are consecutive. The only valid arrangement: Dan(1), Eve(2), Alice(3), Ben(4), Carol(5).',
-  JSON.stringify(['Dan is definitely at position 1.', 'Ben sits immediately left of Carol — they occupy consecutive positions.', 'Alice cannot be at position 1 or 5, and cannot be next to Eve.']),
-  '4',
-  'Dan is at position 1. Since Ben sits immediately left of Carol, they occupy consecutive positions. The only arrangement where Alice is not at either end and not next to Eve, with Ben immediately left of Carol, is: Dan(1), Eve(2), Alice(3), Ben(4), Carol(5). Carol is at position 4.',
-  'easy', 15
+// EASY ─────────────────────────────────────────────────────────
+insertTangram.run(
+  'Tangram #169 — Heart',
+  'Arrange all 7 tangram pieces to form the heart silhouette shown on the canvas.',
+  168, // problem_index (0-based, so puzzle #169 in 1-based is index 168)
+  '[]', // target_silhouette — stored in problemsData, we just reference by index
+  7, 'easy', 15
 );
 
-insertPuzzle.run(
-  'Pet Ownership Puzzle',
-  `Three people — Priya, Sam, and Leo — each own one pet: a cat, a dog, or a fish.
-• Priya does not own the cat.
-• Sam does not own the dog.
-• Leo does not own the fish.
-• The person who owns the dog is not Priya.
-Type the name of the person who owns the fish (Priya, Sam, or Leo).`,
+insertTangram.run(
+  'Tangram #11 — Star',
+  'Arrange all 7 tangram pieces to form the star silhouette shown on the canvas.',
+  10,
   '[]',
-  'Priya',
-  'Priya cannot own the cat, and cannot own the dog. Therefore Priya must own the fish. Sam does not own the dog, so Sam has the cat. Leo has the dog.',
-  JSON.stringify(['Priya cannot own the cat and cannot own the dog — what is left?', 'Sam does not own the dog.', 'Leo does not own the fish — who must?']),
-  'Priya',
-  'Priya cannot own the cat and the dog owner is not Priya, so Priya must own the fish. Sam does not own the dog, so Sam owns the cat. Leo therefore owns the dog. Answer: Priya.',
-  'easy', 15
+  7, 'easy', 15
 );
 
-insertPuzzle.run(
-  'Bridge Crossing Puzzle',
-  `Four people need to cross a bridge at night. They have one torch. At most 2 people can cross at a time. The torch must be walked (not thrown).
-Crossing times: A=1 min, B=2 min, C=5 min, D=10 min.
-When two cross together, they move at the slower person's pace.
-What is the minimum time for all four to cross?
-Answer with a single number — the minimum time in minutes for all four to cross.`,
+insertTangram.run(
+  'Tangram #162 — Arrow',
+  'Arrange all 7 tangram pieces to form the arrow silhouette shown on the canvas.',
+  161,
   '[]',
-  '17',
-  'A+B cross (2min), A returns (1min), C+D cross (10min), B returns (2min), A+B cross (2min) = 17 minutes total.',
-  JSON.stringify(['The two slowest people (C and D) should cross together.', 'Think about who should return the torch each time.', 'Optimal: fastest pair crosses, fastest returns, slowest pair crosses, second fastest returns, fastest pair crosses again.']),
-  '17',
-  'Step 1: A+B cross → 2 min. Step 2: A returns → 1 min (total 3). Step 3: C+D cross → 10 min (total 13). Step 4: B returns → 2 min (total 15). Step 5: A+B cross → 2 min (total 17). Minimum time is 17 minutes.',
-  'medium', 20
+  7, 'easy', 15
 );
 
-insertPuzzle.run(
-  'Murder Mystery',
-  `A man is found murdered on a Sunday morning. His wife calls the police. The police interview four suspects who each give an alibi for the whole day Saturday:
-• Chef: "I was cooking all day."
-• Gardener: "I was mowing the lawn all day."
-• Butler: "I was collecting the mail all day."
-• Maid: "I was doing laundry all day."
-The police immediately arrest one of them.
-Type the role of the murderer (Chef, Gardener, Butler, or Maid).`,
-  '[]',
-  'Butler',
-  'The Butler claims to have been collecting mail all day Saturday. There is no mail delivery on Saturday, making this alibi impossible. The Butler is lying and is arrested.',
-  JSON.stringify(['One of these alibis is physically impossible on a Saturday.', 'Think about what activities are actually possible on a Saturday.', 'Mail is not delivered on Saturdays in most places — which alibi is impossible?']),
-  'Butler',
-  'The Butler claims to have been "collecting mail all day Saturday." Standard postal services do not deliver mail on Saturday. This alibi is physically impossible, meaning the Butler is lying and is the murderer. Answer: Butler.',
-  'medium', 20
-);
-
-insertPuzzle.run(
-  'Banana Puzzle',
-  `3 monkeys share a bunch of bananas. The first monkey takes 3 bananas. The second monkey then takes half of the remaining bananas. The third monkey takes the last banana.
-Answer with a single number — the original number of bananas in the bunch.`,
-  '[]',
-  '5',
-  'Let T = total. After monkey 1 takes 3, T-3 remain. Monkey 2 takes half of (T-3), leaving (T-3)/2. Monkey 3 takes the last banana: (T-3)/2 = 1 → T-3 = 2 → T = 5.',
-  JSON.stringify(['Work backwards from the third monkey.', 'The third monkey takes the last banana, so before that there was exactly 1 banana left.', 'If the second took half of the remaining, the remaining before step 3 was 2.']),
-  '5',
-  'Let T = total bananas. Monkey 1 takes 3, leaving T-3. Monkey 2 takes half of (T-3), leaving (T-3)/2. Monkey 3 takes the last 1 banana, so (T-3)/2 = 1. Solving: T-3 = 2, T = 5. Answer: 5.',
-  'medium', 20
-);
-
-insertPuzzle.run(
-  'Sock Drawer Puzzle',
-  `You have 20 red and 20 blue socks mixed in a drawer. If you must pull two socks at a time in the dark, what is the minimum number of pulls to ensure a matching pair?
-Answer with a single number — the minimum number of pulls needed to guarantee a matching pair.`,
-  '[]',
-  '3',
-  'Worst case: first 2 pulls give one red and one blue (no match). Third pull must be either red or blue, matching one already held, guaranteeing a pair.',
-  JSON.stringify(['Consider the worst possible scenario.', 'With only 2 colors, after 2 pulls you could still have one red and one blue.', 'How many pulls ensure at least 2 socks of the same color exist?']),
-  '3',
-  'In the worst case, your first two pulls could be one red and one blue — no match. Your third pull must be either red or blue, which will always match one of your existing socks. Therefore 3 pulls guarantee a matching pair. Answer: 3.',
-  'easy', 15
-);
-
-insertPuzzle.run(
-  'Animal Weighing Puzzle',
-  `Three animals — an elephant, a lion, and a monkey — are weighed in pairs on a scale:
-• The elephant and 2 crocodiles together weigh 1,200 kg.
-• The 2 crocodiles and 4 monkeys together weigh 400 kg.
-• The elephant and 4 monkeys together weigh 1,000 kg.
-Answer as three comma-separated numbers: Elephant weight, Crocodile weight, Monkey weight in kg.`,
-  '[]',
-  '900,150,25',
-  'Equations: E+2C=1200, 2C+4M=400, E+4M=1000. From eq2: C=200-2M. From eq1: E=800+4M. From eq3: 800+8M=1000 → M=25. E=900, C=150.',
-  JSON.stringify(['Set up three equations from the three pair weighings.', 'From the second equation, express crocodile weight in terms of monkey weight.', 'Substitute to reduce to one variable and solve.']),
-  '900,150,25',
-  'Let E=elephant, C=crocodile, M=monkey. From eq2: C=200-2M. From eq1: E=800+4M. From eq3: 800+8M=1000 → 8M=200 → M=25. Then E=900, C=150. Answer: 900,150,25.',
-  'medium', 20
-);
+// MEDIUM ─────────────────────────────────────────────────────────
+// Medium puzzles will be randomly selected from the remaining pool
+// by pickSingleTask() at session creation time
 
 // ═══════════════════════════════════════════════════════════════
 // WRITING TASKS
@@ -450,11 +390,11 @@ insertWriting.run(
 
 // Summary
 const coding = db.prepare('SELECT difficulty, COUNT(*) as n FROM coding_tasks GROUP BY difficulty').all();
-const puzzle = db.prepare('SELECT difficulty, COUNT(*) as n FROM puzzle_tasks GROUP BY difficulty').all();
+const tangram = db.prepare('SELECT difficulty, COUNT(*) as n FROM tangram_puzzles GROUP BY difficulty').all();
 const writing = db.prepare('SELECT difficulty, COUNT(*) as n FROM writing_tasks GROUP BY difficulty').all();
 
 console.log('\nTask DB summary:');
 console.log('Coding:', coding);
-console.log('Puzzle:', puzzle);
+console.log('Tangram:', tangram);
 console.log('Writing:', writing);
 db.close();

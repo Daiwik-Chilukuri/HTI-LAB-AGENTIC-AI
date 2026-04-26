@@ -5,12 +5,13 @@ import { v4 as uuidv4 } from 'uuid';
 // ── Helpers ────────────────────────────────────────────────────────
 
 type Difficulty = 'easy' | 'medium' | 'hard';
-type TaskType   = 'coding' | 'puzzle' | 'writing';
+type TaskType   = 'coding' | 'puzzle' | 'writing' | 'tangram';
 
 const TABLE: Record<TaskType, string> = {
   coding:  'coding_tasks',
   puzzle:  'puzzle_tasks',
   writing: 'writing_tasks',
+  tangram: 'tangram_puzzles',
 };
 
 /**
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     // ── All 3 task types are used in every session ──────────────────
     // Admin can override via body; otherwise all three are used in fixed order
-    const allTaskTypes: TaskType[] = ['coding', 'puzzle', 'writing'];
+    const allTaskTypes: TaskType[] = ['coding', 'tangram', 'writing'];
     const taskTypeA = (body.task_type_a as TaskType) || allTaskTypes[0];
     const taskTypeB = (body.task_type_b as TaskType) || allTaskTypes[1];
     const taskTypeC = (body.task_type_c as TaskType) || allTaskTypes[2];

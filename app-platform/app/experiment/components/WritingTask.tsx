@@ -158,7 +158,7 @@ export default function WritingTask({ runId, modelId, participantId, sessionId, 
             { role: "system", content: actionSystemPrompt },
             { role: "user", content: `Current draft:\n${text || "(empty)"}\n\n---\n\n${actionPrompts[action]}` },
           ],
-          temperature: 0.8, max_tokens: 2048, enable_reasoning: false,
+          temperature: 0.8, max_tokens: 16384, enable_reasoning: false,
         }),
       });
       const data = await res.json();

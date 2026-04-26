@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const tableName = type === 'coding' ? 'coding_tasks'
       : type === 'puzzle' ? 'puzzle_tasks'
       : type === 'writing' ? 'writing_tasks'
+      : type === 'tangram' ? 'tangram_puzzles'
       : null;
 
     if (!tableName) {
@@ -117,6 +118,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ id: result.lastInsertRowid, type: 'writing' }, { status: 201 });
     }
 
+    if (type === 'tangram') {
+      const stmt = db.prepare(`
+        INSERT INTO tangram_puzzles (title, prompt, problem_index, target_silhouette, piece_count, difficulty, time_limit_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const result = stmt.run(
+        taskData.title || 'Untitled Tangram',
+        taskData.prompt || '',
+        taskData.problem_index ?? 0,
+        JSON.stringify(taskData.target_silhouette || []),
+        taskData.piece_count || 7,
+        taskData.difficulty || 'easy',
+        taskData.time_limit_minutes || 15
+      );
+      return NextResponse.json({ id: result.lastInsertRowid, type: 'tangram' }, { status: 201 });
+    }
+
     return NextResponse.json({ error: 'Invalid task type' }, { status: 400 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Database error';
@@ -138,6 +156,7 @@ export async function DELETE(request: NextRequest) {
     const tableName = type === 'coding' ? 'coding_tasks'
       : type === 'puzzle' ? 'puzzle_tasks'
       : type === 'writing' ? 'writing_tasks'
+      : type === 'tangram' ? 'tangram_puzzles'
       : null;
 
     if (!tableName) {

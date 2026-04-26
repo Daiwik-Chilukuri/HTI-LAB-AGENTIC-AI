@@ -160,7 +160,7 @@ export async function routeToModel(request: RouterRequest): Promise<RouterRespon
     model: modelName,
     messages: guardedMessages,
     temperature: request.temperature ?? 0.7,
-    max_tokens: request.max_tokens ?? 2048,
+    max_tokens: request.max_tokens ?? 16384,
   };
 
   // Enable reasoning for supported models when requested (or always for the test model)

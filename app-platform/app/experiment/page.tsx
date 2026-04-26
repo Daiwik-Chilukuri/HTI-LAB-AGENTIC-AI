@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import CodingTask from "./components/CodingTask";
-import PuzzleTask from "./components/PuzzleTask";
+import TangramTask from "./components/TangramTask";
 import WritingTask from "./components/WritingTask";
 import NasaTlx from "./components/NasaTlx";
 import Timer from "./components/Timer";
@@ -37,9 +37,10 @@ interface GlobalQuestion {
 }
 
 const TASK_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  coding: { label: "Programming Task", color: "var(--accent-blue)" },
-  puzzle: { label: "Logic Puzzle", color: "var(--accent-amber)" },
-  writing: { label: "Creative Writing", color: "var(--accent-emerald)" },
+  coding: { label: "Programming Task", icon: "", color: "var(--accent-blue)" },
+  puzzle: { label: "Logic Puzzle", icon: "", color: "var(--accent-amber)" },
+  writing: { label: "Creative Writing", icon: "", color: "var(--accent-emerald)" },
+  tangram: { label: "Tangram Puzzle", icon: "", color: "var(--accent-purple)" },
 };
 
 const RUN_TIME_SECONDS = 15 * 60; // 15 minutes per run
@@ -260,13 +261,14 @@ export default function ExperimentPage() {
               onTaskComplete={() => setTaskSubmitted(true)}
             />
           )}
-          {run.task_type === "puzzle" && (
-            <PuzzleTask
+          {run.task_type === "tangram" && (
+            <TangramTask
               runId={run.id}
               modelId={run.model_id}
               participantId={session.participant_id}
               sessionId={session.session_id}
               taskId={run.task_id}
+              problemIndex={run.task_id - 1}
               isFaulty={run.is_faulty === 1}
               onTaskComplete={() => setTaskSubmitted(true)}
             />

@@ -91,7 +91,7 @@ export default function AIChatPanel({
       const res  = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model_id: modelId, messages: chatMessages, temperature: 0.7, max_tokens: 2048, enable_reasoning: false }),
+        body: JSON.stringify({ model_id: modelId, messages: chatMessages, temperature: 0.7, max_tokens: 16384, enable_reasoning: false }),
       });
       const data = await res.json();
 
