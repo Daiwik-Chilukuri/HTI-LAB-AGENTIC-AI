@@ -19,6 +19,7 @@ export function getTasksDb(): Database.Database {
 }
 
 function initTasksDb(db: Database.Database) {
+  db.exec(`DROP TABLE IF EXISTS puzzle_tasks`);
   db.exec(`
     CREATE TABLE IF NOT EXISTS coding_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +43,24 @@ function initTasksDb(db: Database.Database) {
       target_silhouette TEXT NOT NULL DEFAULT '[]',
       piece_count INTEGER NOT NULL DEFAULT 7,
       difficulty TEXT NOT NULL DEFAULT 'easy' CHECK(difficulty IN ('easy','medium','hard')),
+      time_limit_minutes INTEGER NOT NULL DEFAULT 15,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS kenken_puzzles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      cages TEXT NOT NULL DEFAULT '[]',
+      difficulty TEXT NOT NULL DEFAULT 'easy' CHECK(difficulty IN ('easy','medium','hard')),
+      checkpoint_1_scaffold TEXT NOT NULL DEFAULT '',
+      checkpoint_1_tests TEXT NOT NULL DEFAULT '[]',
+      checkpoint_2_scaffold TEXT NOT NULL DEFAULT '',
+      checkpoint_2_tests TEXT NOT NULL DEFAULT '[]',
+      checkpoint_3_scaffold TEXT NOT NULL DEFAULT '',
+      checkpoint_3_tests TEXT NOT NULL DEFAULT '[]',
+      checkpoint_4_scaffold TEXT NOT NULL DEFAULT '',
+      checkpoint_4_tests TEXT NOT NULL DEFAULT '[]',
       time_limit_minutes INTEGER NOT NULL DEFAULT 15,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -123,7 +142,7 @@ function migrateRunsFaulty(db: Database.Database) {
     db.exec(`
       CREATE TABLE runs_new (
         ${colDefs.join(', ')},
-        CHECK(task_type IN ('coding','puzzle','writing','tangram'))
+        CHECK(task_type IN ('coding','puzzle','writing','tangram','kenken'))
       );
       INSERT INTO runs_new SELECT * FROM runs;
       DROP TABLE runs;
@@ -171,7 +190,7 @@ function initSurveysDb(db: Database.Database) {
       session_id TEXT NOT NULL,
       participant_id TEXT NOT NULL,
       run_number INTEGER NOT NULL,
-      task_type TEXT NOT NULL CHECK(task_type IN ('coding','puzzle','writing','tangram')),
+      task_type TEXT NOT NULL CHECK(task_type IN ('coding','puzzle','writing','tangram','kenken')),
       task_id INTEGER NOT NULL DEFAULT 0,
       model_id TEXT NOT NULL,
       is_faulty INTEGER NOT NULL DEFAULT 0,

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { ThemeToggle } from "../components/ThemeToggle";
 import CodingTask from "./components/CodingTask";
+import KenKenTask from "./components/KenKenTask";
 import TangramTask from "./components/TangramTask";
 import WritingTask from "./components/WritingTask";
 import NasaTlx from "./components/NasaTlx";
@@ -37,10 +39,11 @@ interface GlobalQuestion {
 }
 
 const TASK_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  coding: { label: "Programming Task", icon: "", color: "var(--accent-blue)" },
-  puzzle: { label: "Logic Puzzle", icon: "", color: "var(--accent-amber)" },
-  writing: { label: "Creative Writing", icon: "", color: "var(--accent-emerald)" },
-  tangram: { label: "Tangram Puzzle", icon: "", color: "var(--accent-purple)" },
+  coding:  { label: "Programming Task",  icon: "", color: "var(--accent-blue)" },
+  kenken:  { label: "KenKen Puzzle",     icon: "", color: "var(--accent-purple)" },
+  puzzle:  { label: "Logic Puzzle",      icon: "", color: "var(--accent-amber)" },
+  writing: { label: "Creative Writing",  icon: "", color: "var(--accent-emerald)" },
+  tangram: { label: "Tangram Puzzle",    icon: "", color: "var(--accent-rose)" },
 };
 
 const RUN_TIME_SECONDS = 15 * 60; // 15 minutes per run
@@ -153,6 +156,9 @@ export default function ExperimentPage() {
       <main className="fade-in" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ maxWidth: 600, width: "100%", padding: "0 24px" }}>
           <div className="glass-card" style={{ padding: 40, textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+              <ThemeToggle storageKey="theme_experiment" />
+            </div>
             {/* Progress indicator */}
             <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 32 }}>
               {session.runs.map((r, i) => (
@@ -252,6 +258,17 @@ export default function ExperimentPage() {
         <div style={{ flex: 1, overflow: "hidden" }}>
           {run.task_type === "coding" && (
             <CodingTask
+              runId={run.id}
+              modelId={run.model_id}
+              participantId={session.participant_id}
+              sessionId={session.session_id}
+              taskId={run.task_id}
+              isFaulty={run.is_faulty === 1}
+              onTaskComplete={() => setTaskSubmitted(true)}
+            />
+          )}
+          {run.task_type === "kenken" && (
+            <KenKenTask
               runId={run.id}
               modelId={run.model_id}
               participantId={session.participant_id}

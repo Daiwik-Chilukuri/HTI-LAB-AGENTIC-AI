@@ -5,18 +5,20 @@ import { v4 as uuidv4 } from 'uuid';
 // ── Helpers ────────────────────────────────────────────────────────
 
 type Difficulty = 'easy' | 'medium' | 'hard';
-type TaskType   = 'coding' | 'puzzle' | 'writing' | 'tangram';
+type TaskType   = 'coding' | 'puzzle' | 'writing' | 'tangram' | 'kenken';
 
 const TABLE: Record<TaskType, string> = {
   coding:  'coding_tasks',
   puzzle:  'puzzle_tasks',
   writing: 'writing_tasks',
   tangram: 'tangram_puzzles',
+  kenken:  'kenken_puzzles',
 };
 
 /**
  * Pick 1 task of the given difficulty from a task type.
  * Falls back to any difficulty if the requested one has no tasks.
+ * For tangram tasks, returns the problem_index (not the row id).
  */
 function pickSingleTask(
   tasksDb: ReturnType<typeof getTasksDb>,
@@ -39,6 +41,15 @@ function pickSingleTask(
   return rows[0].id;
 }
 
+/**
+ * For tangram tasks, the task_id stored on the run record should be
+ * the problem_index (used to index into problemsData.js), not the row id.
+ */
+function getTangramTaskId(tasksDb: ReturnType<typeof getTasksDb>, rowId: number): number {
+  const row = tasksDb.prepare('SELECT problem_index FROM tangram_puzzles WHERE id = ?').get(rowId) as { problem_index: number } | undefined;
+  return row?.problem_index ?? rowId;
+}
+
 // POST – Create a new session with counterbalanced task assignment
 export async function POST(request: NextRequest) {
   try {
@@ -56,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     // ── All 3 task types are used in every session ──────────────────
     // Admin can override via body; otherwise all three are used in fixed order
-    const allTaskTypes: TaskType[] = ['coding', 'tangram', 'writing'];
+    const allTaskTypes: TaskType[] = ['kenken', 'tangram', 'writing'];
     const taskTypeA = (body.task_type_a as TaskType) || allTaskTypes[0];
     const taskTypeB = (body.task_type_b as TaskType) || allTaskTypes[1];
     const taskTypeC = (body.task_type_c as TaskType) || allTaskTypes[2];
@@ -100,10 +111,11 @@ export async function POST(request: NextRequest) {
     `).run(sessionId, participantId, taskTypeA, taskTypeB, taskTypeC, JSON.stringify(agentOrder), counterbalanceKey);
 
     // ── Create 3 runs (one per task type, one per agent) ────────────
+    // For tangram runs, store problem_index as task_id (not the row id)
     const runAssignments = [
-      { taskType: taskTypeA, taskId: taskA, agent: agentOrder[0] },
-      { taskType: taskTypeB, taskId: taskB, agent: agentOrder[1] },
-      { taskType: taskTypeC, taskId: taskC, agent: agentOrder[2] },
+      { taskType: taskTypeA, taskId: taskTypeA === 'tangram' ? getTangramTaskId(tasksDb, taskA) : taskA, agent: agentOrder[0] },
+      { taskType: taskTypeB, taskId: taskTypeB === 'tangram' ? getTangramTaskId(tasksDb, taskB) : taskB, agent: agentOrder[1] },
+      { taskType: taskTypeC, taskId: taskTypeC === 'tangram' ? getTangramTaskId(tasksDb, taskC) : taskC, agent: agentOrder[2] },
     ];
 
     // ── Pick 1 of 3 runs to be the faulty AI probe ───────────────────

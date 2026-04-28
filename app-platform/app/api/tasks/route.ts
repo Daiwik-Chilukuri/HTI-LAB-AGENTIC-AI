@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
       : type === 'puzzle' ? 'puzzle_tasks'
       : type === 'writing' ? 'writing_tasks'
       : type === 'tangram' ? 'tangram_puzzles'
+      : type === 'kenken' ? 'kenken_puzzles'
       : null;
 
     if (!tableName) {
@@ -135,6 +136,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ id: result.lastInsertRowid, type: 'tangram' }, { status: 201 });
     }
 
+    if (type === 'kenken') {
+      const stmt = db.prepare(`
+        INSERT INTO kenken_puzzles (title, cages, difficulty,
+          checkpoint_1_scaffold, checkpoint_1_tests,
+          checkpoint_2_scaffold, checkpoint_2_tests,
+          checkpoint_3_scaffold, checkpoint_3_tests,
+          checkpoint_4_scaffold, checkpoint_4_tests,
+          time_limit_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const result = stmt.run(
+        taskData.title || 'Untitled KenKen',
+        JSON.stringify(taskData.cages || []),
+        taskData.difficulty || 'easy',
+        taskData.checkpoint_1_scaffold || '',
+        JSON.stringify(taskData.checkpoint_1_tests || []),
+        taskData.checkpoint_2_scaffold || '',
+        JSON.stringify(taskData.checkpoint_2_tests || []),
+        taskData.checkpoint_3_scaffold || '',
+        JSON.stringify(taskData.checkpoint_3_tests || []),
+        taskData.checkpoint_4_scaffold || '',
+        JSON.stringify(taskData.checkpoint_4_tests || []),
+        taskData.time_limit_minutes || 15
+      );
+      return NextResponse.json({ id: result.lastInsertRowid, type: 'kenken' }, { status: 201 });
+    }
+
     return NextResponse.json({ error: 'Invalid task type' }, { status: 400 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Database error';
@@ -157,6 +185,7 @@ export async function DELETE(request: NextRequest) {
       : type === 'puzzle' ? 'puzzle_tasks'
       : type === 'writing' ? 'writing_tasks'
       : type === 'tangram' ? 'tangram_puzzles'
+      : type === 'kenken' ? 'kenken_puzzles'
       : null;
 
     if (!tableName) {
