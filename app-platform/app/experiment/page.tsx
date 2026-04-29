@@ -62,6 +62,8 @@ export default function ExperimentPage() {
   const [globalAnswers, setGlobalAnswers] = useState<Record<number, string>>({});
   const [globalSubmitting, setGlobalSubmitting] = useState(false);
   const [globalDone, setGlobalDone] = useState(false);
+  const [showKenKenInstructions, setShowKenKenInstructions] = useState(false);
+  const [showTangramInstructions, setShowTangramInstructions] = useState(false);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("session");
@@ -91,6 +93,29 @@ export default function ExperimentPage() {
   }, [timerActive, timeLeft]);
 
   const handleStartRun = useCallback(() => {
+    const run = session?.runs[currentRun];
+    if (run?.task_type === "kenken") {
+      setShowKenKenInstructions(true);
+    } else if (run?.task_type === "tangram") {
+      setShowTangramInstructions(true);
+    } else {
+      setPhase("task");
+      setTimeLeft(RUN_TIME_SECONDS);
+      setTimerActive(true);
+      setTaskSubmitted(false);
+    }
+  }, [session, currentRun]);
+
+  const handleKenKenInstructionsDismiss = useCallback(() => {
+    setShowKenKenInstructions(false);
+    setPhase("task");
+    setTimeLeft(RUN_TIME_SECONDS);
+    setTimerActive(true);
+    setTaskSubmitted(false);
+  }, []);
+
+  const handleTangramInstructionsDismiss = useCallback(() => {
+    setShowTangramInstructions(false);
     setPhase("task");
     setTimeLeft(RUN_TIME_SECONDS);
     setTimerActive(true);
@@ -145,6 +170,138 @@ export default function ExperimentPage() {
   }, [session, globalQuestions, globalAnswers]);
 
 
+  const isDebugMode = session?.participant_id === "admin_test";
+
+  // ── KenKen Instructions Modal ───────────────────────────────
+  if (showKenKenInstructions) {
+    return (
+      <div
+        style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.75)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "24px",
+        }}
+        onClick={(e) => { if (e.target === e.currentTarget) return; }}
+      >
+        <div style={{
+          background: "var(--bg-secondary)",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border-subtle)",
+          maxWidth: 680, width: "100%",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
+        }}>
+          {/* Modal header */}
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <h3 style={{ margin: 0, color: "var(--text-primary)" }}>KenKen Puzzle — Instructions</h3>
+          </div>
+          {/* Scrollable image */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", background: "var(--bg-primary)" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/Ken-Ken/kenken_instructions.jpg"
+              alt="KenKen instructions"
+              style={{ width: "100%", display: "block" }}
+            />
+          </div>
+          {/* Footer */}
+          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>
+              You can revisit these instructions at any time during the task via the <strong>Help / Rules</strong> button.
+            </p>
+            <button
+              id="start-run-btn"
+              className="btn btn-primary"
+              onClick={handleKenKenInstructionsDismiss}
+            >
+              I&apos;ve read the instructions, start task →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Tangram Instructions Modal ───────────────────────────────
+  if (showTangramInstructions) {
+    return (
+      <div
+        style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.75)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "24px",
+        }}
+        onClick={(e) => { if (e.target === e.currentTarget) return; }}
+      >
+        <div style={{
+          background: "var(--bg-secondary)",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border-subtle)",
+          maxWidth: 720, width: "100%",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
+        }}>
+          {/* Modal header */}
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0 }}>
+            <h3 style={{ margin: 0, color: "var(--text-primary)" }}>Tangram Puzzle -- Instructions</h3>
+          </div>
+          {/* Scrollable content */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px", background: "var(--bg-primary)", display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* Text rules */}
+            <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: "16px 20px", border: "1px solid var(--border-subtle)" }}>
+              <h4 style={{ margin: "0 0 12px 0", color: "var(--text-primary)", fontSize: "0.9rem" }}>Objective</h4>
+              <ul style={{ margin: "0 0 16px 0", paddingLeft: 20, color: "var(--text-secondary)", fontSize: "0.82rem", lineHeight: 1.7 }}>
+                <li>Arrange all 7 tiles to fill the target silhouette shown in the top-left corner of the canvas</li>
+                <li>All 7 tiles must be used -- none can be left out</li>
+                <li>Tiles cannot overlap each other</li>
+              </ul>
+              <h4 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontSize: "0.9rem" }}>How to move tiles</h4>
+              <p style={{ margin: "0 0 12px 0", color: "var(--text-secondary)", fontSize: "0.82rem", lineHeight: 1.6 }}>
+                <strong>Left-click + drag</strong> -- move a tile to any position on the canvas
+              </p>
+              <h4 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontSize: "0.9rem" }}>How to rotate tiles</h4>
+              <p style={{ margin: "0 0 12px 0", color: "var(--text-secondary)", fontSize: "0.82rem", lineHeight: 1.6 }}>
+                <strong>Right-click + drag</strong> -- rotate a tile around its center (snaps to 45 degree angles)
+              </p>
+              <h4 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontSize: "0.9rem" }}>How to lift a tile above others</h4>
+              <p style={{ margin: "0 0 12px 0", color: "var(--text-secondary)", fontSize: "0.82rem", lineHeight: 1.6 }}>
+                <strong>Double left-click</strong> on a tile -- brings it to the front so it can pass over other tiles without getting stuck
+              </p>
+              <h4 style={{ margin: "0 0 8px 0", color: "var(--text-primary)", fontSize: "0.9rem" }}>How to flip the parallelogram</h4>
+              <p style={{ margin: "0 0 0 0", color: "var(--text-secondary)", fontSize: "0.82rem", lineHeight: 1.6 }}>
+                Use the <strong>"Flip Parallelogram"</strong> button below the canvas (the parallelogram is the only tile that can be reflected)
+              </p>
+            </div>
+            {/* Image */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/Ken-Ken/tangram_instructions.png"
+              alt="Tangram instructions"
+              style={{ width: "100%", display: "block", borderRadius: "var(--radius-sm)" }}
+            />
+          </div>
+          {/* Footer */}
+          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>
+              You can revisit these instructions at any time during the task via the <strong>Help / Rules</strong> button.
+            </p>
+            <button
+              id="start-run-btn"
+              className="btn btn-primary"
+              onClick={handleTangramInstructionsDismiss}
+            >
+              I&apos;ve read the instructions, start task --
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!session) return null;
 
   const run = session.runs[currentRun];
@@ -156,7 +313,10 @@ export default function ExperimentPage() {
       <main className="fade-in" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ maxWidth: 600, width: "100%", padding: "0 24px" }}>
           <div className="glass-card" style={{ padding: 40, textAlign: "center" }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              {isDebugMode && (
+                <span className="badge badge-amber" style={{ fontSize: "0.7rem" }}>DEBUG MODE</span>
+              )}
               <ThemeToggle storageKey="theme_experiment" />
             </div>
             {/* Progress indicator */}
@@ -242,6 +402,26 @@ export default function ExperimentPage() {
             timeLeft={timeLeft}
             totalTime={RUN_TIME_SECONDS}
           />
+
+          {isDebugMode && (
+            <button
+              className="btn btn-sm"
+              style={{ background: "var(--accent-amber)", color: "#000", fontWeight: 700, border: "none" }}
+              onClick={() => { setTimerActive(false); setTaskSubmitted(true); setPhase("survey"); }}
+            >
+              Skip Task →
+            </button>
+          )}
+
+          {run.task_type === "tangram" && (
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: "0.75rem" }}
+              onClick={() => setShowTangramInstructions(true)}
+            >
+              Help / Rules
+            </button>
+          )}
 
           <button
             id="submit-task-btn"

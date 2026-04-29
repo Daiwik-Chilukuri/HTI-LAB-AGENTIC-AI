@@ -129,6 +129,7 @@ export default function KenKenTask({
   const [passed, setPassed]        = useState<(boolean)[]>([false, false, false, false]);
   const [unlocked, setUnlocked]    = useState<boolean[]>([true, false, false, false]);
   const [submitted, setSubmitted]   = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   const [currentCp, setCurrentCp] = useState(0); // 0-indexed
 
@@ -333,6 +334,61 @@ export default function KenKenTask({
 
   const allPassed = passed.every(Boolean);
 
+  // ── Instructions Modal ───────────────────────────────────────
+  if (showInstructions) {
+    return (
+      <div
+        style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.75)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "24px",
+        }}
+        onClick={(e) => { if (e.target === e.currentTarget) setShowInstructions(false); }}
+      >
+        <div style={{
+          background: "var(--bg-secondary)",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border-subtle)",
+          maxWidth: 680, width: "100%",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
+        }}>
+          {/* Modal header */}
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <h3 style={{ margin: 0, color: "var(--text-primary)" }}>KenKen Puzzle — Instructions</h3>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: "0.8rem" }}
+              onClick={() => setShowInstructions(false)}
+            >
+              Close
+            </button>
+          </div>
+          {/* Scrollable image */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", background: "var(--bg-primary)" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/Ken-Ken/kenken_instructions.jpg"
+              alt="KenKen instructions"
+              style={{ width: "100%", display: "block" }}
+            />
+          </div>
+          {/* Footer */}
+          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowInstructions(false)}
+            >
+              Got it, let&apos;s go →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", height: "100%" }}>
       {/* Left – Puzzle info + Checkpoint tabs */}
@@ -483,6 +539,13 @@ export default function KenKenTask({
             checkpoint_{currentCp + 1}.py
           </span>
           <div className="flex gap-2">
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: "0.75rem" }}
+              onClick={() => setShowInstructions(true)}
+            >
+              Help / Rules
+            </button>
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => handleRun(currentCp)}

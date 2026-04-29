@@ -177,25 +177,9 @@ const insertTangram = db.prepare(`
 `);
 
 insertTangram.run(
-  'Tangram #169 — Heart',
-  'Arrange all 7 tangram pieces to form the heart silhouette shown on the canvas.',
-  168,
-  '[]',
-  7, 'easy', 15
-);
-
-insertTangram.run(
-  'Tangram #11 — Star',
-  'Arrange all 7 tangram pieces to form the star silhouette shown on the canvas.',
-  10,
-  '[]',
-  7, 'easy', 15
-);
-
-insertTangram.run(
-  'Tangram #162 — Arrow',
-  'Arrange all 7 tangram pieces to form the arrow silhouette shown on the canvas.',
-  161,
+  'Richter Tangram #3',
+  'Arrange all 7 tangram pieces to form the silhouette shown on the canvas.',
+  3,
   '[]',
   7, 'easy', 15
 );

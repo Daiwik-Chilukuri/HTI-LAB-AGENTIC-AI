@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { ThemeToggle } from "../components/ThemeToggle";
 
 // ── Types ──────────────────────────────────────────────────────────
 type TaskTab    = "coding" | "puzzle" | "writing";
@@ -473,6 +474,7 @@ export default function NexusAdminPage() {
             <p>HTI-Lab AgenticAI - Researcher Tools</p>
           </div>
           <div className="flex items-center gap-3">
+            <ThemeToggle storageKey="theme_admin" />
             <button
               className={`btn btn-sm ${forceTestModel ? "btn-danger" : "btn-secondary"}`}
               onClick={toggleTestMode}

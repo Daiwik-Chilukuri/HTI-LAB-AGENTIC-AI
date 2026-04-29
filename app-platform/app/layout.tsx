@@ -20,7 +20,7 @@ export default function RootLayout({
             __html: `
               (function() {
                 try {
-                  var theme = sessionStorage.getItem('theme');
+                  var theme = sessionStorage.getItem('theme_experiment') || sessionStorage.getItem('theme_admin') || sessionStorage.getItem('theme');
                   if (theme === 'dark' || theme === 'light') {
                     document.documentElement.setAttribute('data-theme', theme);
                   }

@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import TangramGame, { type TangramGameHandle, type Shape } from "./TangramGame";
 import AIChatPanel from "./AIChatPanel";
+import { renderMarkdown } from "./renderMarkdown";
 import { logEvent } from "@/lib/logger";
 import { TANGRAM_PIECES, buildSilhouetteContext, buildCurrentStateContext } from "@/lib/tangram-pieces";
 
@@ -418,7 +419,42 @@ function AIChatPanelWithSendState({
         )}
         {messages.map((msg, i) => (
           <div key={i} className={`chat-message ${msg.role}`}>
-            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.content}</div>
+            <div style={{ wordBreak: "break-word" }}>
+              {(() => {
+                const codeBlockRanges = [];
+                const fenceRe = /```(\w*)\n?([\s\S]*?)```/g;
+                let match;
+                const content = msg.content;
+                while ((match = fenceRe.exec(content)) !== null) {
+                  codeBlockRanges.push({ start: match.index, end: match.index + match[0].length, block: { language: match[1] || "text", code: match[2] } });
+                }
+                if (codeBlockRanges.length === 0) {
+                  return <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>{renderMarkdown(content)}</div>;
+                }
+                const segments: React.ReactNode[] = [];
+                let lastEnd = 0;
+                codeBlockRanges.forEach((range, idx) => {
+                  if (range.start > lastEnd) {
+                    segments.push(<div key={`t-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>{renderMarkdown(content.slice(lastEnd, range.start))}</div>);
+                  }
+                  segments.push(
+                    <div key={`c-${idx}`} style={{ position: "relative", margin: "8px 0" }}>
+                      {range.block.language && range.block.language !== "text" && (
+                        <div style={{ fontSize: "0.65rem", color: "var(--text-dim)", marginBottom: 2, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{range.block.language}</div>
+                      )}
+                      <div style={{ background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", overflow: "hidden" }}>
+                        <pre style={{ margin: 0, padding: "8px 12px", fontSize: "0.8rem", fontFamily: "var(--font-mono)", overflowX: "auto" }}><code>{range.block.code}</code></pre>
+                      </div>
+                    </div>
+                  );
+                  lastEnd = range.end;
+                });
+                if (lastEnd < content.length) {
+                  segments.push(<div key="t-last" style={{ display: "flex", flexDirection: "column", gap: 2 }}>{renderMarkdown(content.slice(lastEnd))}</div>);
+                }
+                return <>{segments}</>;
+              })()}
+            </div>
           </div>
         ))}
         {loading && (

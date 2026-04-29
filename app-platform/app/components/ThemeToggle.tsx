@@ -2,20 +2,24 @@
 
 import { useEffect, useState } from "react";
 
-export function ThemeToggle() {
+interface ThemeToggleProps {
+  storageKey?: string;
+}
+
+export function ThemeToggle({ storageKey = "theme" }: ThemeToggleProps) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("theme") as "light" | "dark" | null;
+    const stored = sessionStorage.getItem(storageKey) as "light" | "dark" | null;
     if (stored === "dark" || stored === "light") {
       setTheme(stored);
     }
-  }, []);
+  }, [storageKey]);
 
   const applyTheme = (t: "light" | "dark") => {
     setTheme(t);
     document.documentElement.setAttribute("data-theme", t);
-    sessionStorage.setItem("theme", t);
+    sessionStorage.setItem(storageKey, t);
   };
 
   return (
